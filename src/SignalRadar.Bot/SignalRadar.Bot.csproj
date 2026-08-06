@@ -1,5 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <PackageReference Include="Discord.Net.WebSocket" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="../SignalRadar.Application/SignalRadar.Application.csproj" />
   </ItemGroup>
 </Project>

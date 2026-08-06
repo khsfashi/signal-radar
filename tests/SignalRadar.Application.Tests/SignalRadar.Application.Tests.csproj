@@ -15,6 +15,8 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/SignalRadar.Application/SignalRadar.Application.csproj" />
+    <ProjectReference Include="../../src/SignalRadar.Bot/SignalRadar.Bot.csproj" />
+    <ProjectReference Include="../../src/SignalRadar.Infrastructure/SignalRadar.Infrastructure.csproj" />
     <ProjectReference Include="../../src/SignalRadar.Domain/SignalRadar.Domain.csproj" />
   </ItemGroup>
 </Project>

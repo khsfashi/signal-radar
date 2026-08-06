@@ -38,7 +38,7 @@ dotnet test SignalRadar.sln --configuration Release --no-build
 docker compose up -d postgres
 ```
 
-Run the temporary ingestion sample:
+Run the Discord inbox worker:
 
 ```bash
 dotnet run --project src/SignalRadar.Worker
@@ -52,3 +52,16 @@ Copy `.env.example` to `.env` for local infrastructure. Never commit bot tokens,
 
 - [Architecture](docs/architecture.md)
 - [Roadmap](docs/roadmap.md)
+
+## Discord inbox configuration
+
+The worker connects to Discord through `Discord.Net.WebSocket` and accepts messages only when all configured allow-list checks pass.
+
+1. Create a Discord application and bot in the Developer Portal.
+2. Enable the **Message Content Intent** on the bot page.
+3. Invite the bot with permission to view the private source channel and read message history.
+4. Copy `.env.example` values into your runtime environment.
+5. Set `DISCORD_ALLOWED_GUILD_IDS` and `DISCORD_ALLOWED_CHANNEL_IDS` to comma-separated Discord snowflake IDs.
+6. Set `DISCORD_ALLOWED_AUTHOR_IDS` to the GeekNews bot or webhook user ID when known.
+
+The token is read only from `DISCORD_BOT_TOKEN`; it must never be committed. The current receipt store and article inbox are intentionally in-memory and will be replaced by PostgreSQL persistence in the next milestone.

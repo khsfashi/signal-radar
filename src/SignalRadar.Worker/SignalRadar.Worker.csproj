@@ -4,6 +4,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../SignalRadar.Application/SignalRadar.Application.csproj" />
+    <ProjectReference Include="../SignalRadar.Bot/SignalRadar.Bot.csproj" />
     <ProjectReference Include="../SignalRadar.Infrastructure/SignalRadar.Infrastructure.csproj" />
   </ItemGroup>
 </Project>
