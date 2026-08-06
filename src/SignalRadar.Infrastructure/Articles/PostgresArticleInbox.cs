@@ -15,8 +15,18 @@ public sealed class PostgresArticleInbox : IArticleInbox
             source,
             external_id,
             published_at,
-            collected_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+            collected_at,
+            topics,
+            primary_topic,
+            source_trust,
+            topic_interest,
+            practical_impact,
+            freshness,
+            base_score,
+            ranking_profile_version)
+        VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+            $11, $12, $13, $14, $15)
         ON CONFLICT DO NOTHING;
         """;
 
@@ -46,6 +56,14 @@ public sealed class PostgresArticleInbox : IArticleInbox
         command.Parameters.Add(externalId);
         command.Parameters.AddWithValue(article.PublishedAt);
         command.Parameters.AddWithValue(article.CollectedAt);
+        command.Parameters.AddWithValue((int)article.Assessment.Topics);
+        command.Parameters.AddWithValue((short)article.Assessment.PrimaryTopic);
+        command.Parameters.AddWithValue((short)article.Assessment.SourceTrust);
+        command.Parameters.AddWithValue((short)article.Assessment.TopicInterest);
+        command.Parameters.AddWithValue((short)article.Assessment.PracticalImpact);
+        command.Parameters.AddWithValue((short)article.Assessment.Freshness);
+        command.Parameters.AddWithValue(article.Assessment.BaseScore);
+        command.Parameters.AddWithValue(article.Assessment.ProfileVersion);
 
         int affectedRows = await command
             .ExecuteNonQueryAsync(cancellationToken)
