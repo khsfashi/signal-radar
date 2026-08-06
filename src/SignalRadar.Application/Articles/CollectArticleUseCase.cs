@@ -6,16 +6,23 @@ public sealed class CollectArticleUseCase
 {
     private readonly IArticleInbox _articleInbox;
     private readonly IUrlCanonicalizer _urlCanonicalizer;
+    private readonly IArticleAssessmentPolicy _assessmentPolicy;
     private readonly TimeProvider _timeProvider;
 
     public CollectArticleUseCase(
         IArticleInbox articleInbox,
         IUrlCanonicalizer urlCanonicalizer,
+        IArticleAssessmentPolicy assessmentPolicy,
         TimeProvider timeProvider)
     {
-        _articleInbox = articleInbox;
-        _urlCanonicalizer = urlCanonicalizer;
-        _timeProvider = timeProvider;
+        _articleInbox = articleInbox
+            ?? throw new ArgumentNullException(nameof(articleInbox));
+        _urlCanonicalizer = urlCanonicalizer
+            ?? throw new ArgumentNullException(nameof(urlCanonicalizer));
+        _assessmentPolicy = assessmentPolicy
+            ?? throw new ArgumentNullException(nameof(assessmentPolicy));
+        _timeProvider = timeProvider
+            ?? throw new ArgumentNullException(nameof(timeProvider));
     }
 
     public async ValueTask<CollectArticleResult> ExecuteAsync(
@@ -25,13 +32,19 @@ public sealed class CollectArticleUseCase
         ArgumentNullException.ThrowIfNull(candidate);
 
         Uri canonicalUrl = _urlCanonicalizer.Normalize(candidate.Url);
+        DateTimeOffset collectedAt = _timeProvider.GetUtcNow();
+        ArticleAssessment assessment = _assessmentPolicy.Assess(
+            candidate,
+            canonicalUrl,
+            collectedAt);
         Article article = Article.Create(
             candidate.Title,
             canonicalUrl,
             candidate.Source,
             candidate.PublishedAt,
-            _timeProvider.GetUtcNow(),
-            candidate.ExternalId);
+            collectedAt,
+            candidate.ExternalId,
+            assessment);
 
         bool wasAdded = await _articleInbox
             .TryAddAsync(article, cancellationToken)
