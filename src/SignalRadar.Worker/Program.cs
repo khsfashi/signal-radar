@@ -302,9 +302,14 @@ try
         DiscordSocketMessageMapper mapper = new();
         PostgresArticleRankingReader rankingReader = new(dataSource);
         PostgresArticleFeedbackStore feedbackStore = new(dataSource);
+        PostgresArticleSaveStore saveStore = new(dataSource);
+        SavedArticleMarkdownExporter markdownExporter = new();
         DiscordArticleInteractionService interactionService = new(
             rankingReader,
             feedbackStore,
+            saveStore,
+            saveStore,
+            markdownExporter,
             timeProvider);
         DiscordArticleInteractionHandler interactionHandler = new(
             discordOptions,
