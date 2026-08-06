@@ -129,7 +129,7 @@ Gemini Generate Content API:
 ```env
 SUMMARY_PROVIDER=gemini-generate-content
 GEMINI_API_KEY=Google-AI-Studio에서-발급한-Key
-GEMINI_SUMMARY_MODEL=gemini-2.5-flash
+GEMINI_SUMMARY_MODEL=gemini-3.6-flash
 ```
 
 API Key가 없어도 수집, 랭킹, 저장, `/export`, `/digest`는 정상 동작한다. `/summarize`만 등록되지 않는다.
