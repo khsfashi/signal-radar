@@ -23,9 +23,13 @@
 
 ## M3 — Ranking and feedback
 
-- [ ] Add trust, novelty, impact, and momentum scoring.
-- [ ] Add topic and negative-keyword weights.
-- [ ] Learn from explicit reactions and route ranked items.
+- [x] Add deterministic source-trust, topic-interest, practical-impact, and freshness scoring.
+- [x] Add multi-label topic classification and a configurable personal ranking profile.
+- [x] Persist inspectable score components and profile versions.
+- [x] Store explicit interested, not-interested, and hidden feedback per actor.
+- [x] Query ranked articles with bounded feedback adjustment.
+- [ ] Add title-similarity novelty scoring and negative-keyword penalties.
+- [ ] Connect Discord reactions and route ranked items to channels.
 
 ## M4 — Summaries and exports
 
@@ -37,4 +41,5 @@
 
 - [ ] Cluster the same event across independent sources.
 - [ ] Compare short-window volume against a longer baseline.
+- [ ] Add momentum scoring after event clustering exists.
 - [ ] Produce daily and weekly trend reports.
