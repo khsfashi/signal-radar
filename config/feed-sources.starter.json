@@ -1,0 +1,26 @@
+[
+  {
+    "name": "openai-news",
+    "url": "https://openai.com/news/rss.xml",
+    "pollIntervalMinutes": 30,
+    "enabled": true
+  },
+  {
+    "name": "unreal-engine-news",
+    "url": "https://www.unrealengine.com/rss?lang=en-US",
+    "pollIntervalMinutes": 30,
+    "enabled": true
+  },
+  {
+    "name": "godot-engine-blog",
+    "url": "https://godotengine.org/rss.xml",
+    "pollIntervalMinutes": 30,
+    "enabled": true
+  },
+  {
+    "name": "github-blog",
+    "url": "https://github.blog/feed/",
+    "pollIntervalMinutes": 30,
+    "enabled": true
+  }
+]
