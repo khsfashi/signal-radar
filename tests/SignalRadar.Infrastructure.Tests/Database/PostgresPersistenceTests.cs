@@ -32,7 +32,15 @@ public sealed class PostgresPersistenceTests
             new Uri("https://example.com/postgres"),
             "integration-test",
             DateTimeOffset.UtcNow,
-            DateTimeOffset.UtcNow);
+            DateTimeOffset.UtcNow,
+            "external-1");
+        Article sameExternalItemAtDifferentUrl = Article.Create(
+            "PostgreSQL persistence mirror",
+            new Uri("https://mirror.example.com/postgres"),
+            "integration-test",
+            DateTimeOffset.UtcNow,
+            DateTimeOffset.UtcNow,
+            "external-1");
 
         PostgresArticleInbox firstArticleStore = new(dataSource);
         PostgresArticleInbox secondArticleStore = new(dataSource);
@@ -42,6 +50,9 @@ public sealed class PostgresPersistenceTests
             CancellationToken.None));
         Assert.False(await secondArticleStore.TryAddAsync(
             article,
+            CancellationToken.None));
+        Assert.False(await secondArticleStore.TryAddAsync(
+            sameExternalItemAtDifferentUrl,
             CancellationToken.None));
 
         PostgresDiscordMessageReceiptStore firstReceiptStore = new(
