@@ -30,7 +30,8 @@ public sealed class CollectArticleUseCase
             canonicalUrl,
             candidate.Source,
             candidate.PublishedAt,
-            _timeProvider.GetUtcNow());
+            _timeProvider.GetUtcNow(),
+            candidate.ExternalId);
 
         bool wasAdded = await _articleInbox
             .TryAddAsync(article, cancellationToken)
