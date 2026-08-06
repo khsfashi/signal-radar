@@ -19,13 +19,15 @@ Signal Radar is a personal technology-intelligence pipeline for collecting, norm
 - Stores an independent per-user article reading list.
 - Exports up to 100 saved source links as provider-neutral UTF-8 Markdown.
 - Optionally registers `/summarize` for on-demand structured saved-article briefings.
-- Caches structured summaries by deterministic SHA-256 input identity.
+- Retrieves bounded HTML article excerpts only for explicit summary requests.
+- Honors robots rules, validates redirect targets, rejects private networks, and enforces content-type, size, and timeout limits.
+- Caches normalized article text and structured summaries with deterministic SHA-256 identities.
 - Preserves idempotency across restarts with database constraints and expiring leases.
 - Tracks source success, failure, retry, and quarantine state.
 - Runs PostgreSQL migrations with checksum validation and an advisory lock.
 - Builds and runs unit plus PostgreSQL integration tests in GitHub Actions.
 
-LLM calls are intentionally not part of ingestion. Deterministic collection, filtering, deduplication, classification, and base scoring happen first. Summary generation is optional and happens only after an explicit user command.
+LLM calls are intentionally not part of ingestion. Deterministic collection, filtering, deduplication, classification, and base scoring happen first. Article retrieval and summary generation are optional and happen only after an explicit user command.
 
 ## Quick start
 
@@ -69,7 +71,7 @@ The gateway synchronizes guild-scoped `/top`, `/search`, `/saved`, and `/export`
 
 `/export` creates a bounded Markdown attachment containing the user's saved source links, timestamps, topics, and current scores. The export is usable manually with any analysis tool and does not require an LLM API key.
 
-When `SUMMARY_PROVIDER=openai-responses` and the required OpenAI settings are present, the synchronized command set also includes `/summarize`. It summarizes one to twenty saved article signals in Korean or English and returns an ephemeral structured briefing. The current prompt receives saved metadata only and explicitly does not claim to have read the linked article bodies.
+When `SUMMARY_PROVIDER=openai-responses` and the required OpenAI settings are present, the synchronized command set also includes `/summarize`. It summarizes one to twenty saved articles in Korean or English and returns an ephemeral structured briefing. Signal Radar attempts to include cleaned article excerpts and records extraction failures as metadata-only fallbacks.
 
 See [Discord interactions](docs/discord-interactions.md) for command options, topic slugs, feedback behavior, saved-list behavior, and command synchronization.
 
@@ -84,9 +86,11 @@ OPENAI_SUMMARY_MODEL=your-model-id
 OPENAI_RESPONSES_ENDPOINT=https://api.openai.com/v1/responses
 ```
 
-The cache key includes provider, model, prompt version, language, and ordered article metadata. Repeating the same request returns the PostgreSQL-cached result without another provider call. API keys and Discord user identifiers are not stored in the summary cache.
+Before the provider call, a robots-aware HTML reader retrieves only the requested saved-article URLs. It does not execute JavaScript or crawl discovered links. It accepts only HTML/XHTML, removes common navigation and promotional boilerplate, selects an article-like block, and stores bounded normalized text rather than raw HTML.
 
-See [Structured summaries](docs/summaries.md) for the schema, cache identity, limits, security behavior, and current metadata-only limitation.
+The summary cache key includes provider, model, prompt version, language, exact instructions, article metadata, extraction statuses, content hashes, and the exact bounded excerpts sent to the provider. Repeating the same request returns the PostgreSQL-cached result without another provider call. API keys and Discord user identifiers are not stored in the summary cache.
+
+See [Structured summaries](docs/summaries.md) for retrieval policy, cache identity, limits, security behavior, and privacy implications.
 
 ## RSS and Atom
 
@@ -125,6 +129,7 @@ See [Ranking and feedback](docs/ranking.md) for the formula, profile format, per
 - Explicit feedback is unique per article and actor.
 - Saved articles are unique per article and actor and remain separate from feedback.
 - A user's hidden articles are excluded from their later Discord ranked queries.
+- Article content has one current status and bounded normalized-text cache per article.
 - Structured summaries are immutable for a deterministic input hash.
 - Discord messages, feeds, and external API sources use expiring tokenized leases.
 - Five consecutive polling failures quarantine a source for six hours.
