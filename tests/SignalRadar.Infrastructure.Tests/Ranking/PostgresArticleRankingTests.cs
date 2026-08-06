@@ -93,6 +93,73 @@ public sealed class PostgresArticleRankingTests
         Assert.Equal(3, aggregate.Weight);
     }
 
+    [Fact]
+    public async Task SearchAndTopExcludeOnlyTheActorsHiddenArticles()
+    {
+        string? connectionString = Environment.GetEnvironmentVariable(
+            "SIGNAL_RADAR_TEST_DATABASE_CONNECTION_STRING");
+
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            return;
+        }
+
+        await using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(
+            connectionString);
+        PostgresDatabaseMigrator migrator = new(dataSource);
+        await migrator.MigrateAsync(CancellationToken.None);
+
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        string searchToken = $"UnrealSignal{Guid.NewGuid():N}";
+        Article article = Article.Create(
+            $"{searchToken} tooling release",
+            new Uri($"https://example.com/search/{Guid.NewGuid():N}"),
+            "integration-search",
+            now,
+            now,
+            externalId: Guid.NewGuid().ToString("N"),
+            ArticleAssessment.Unclassified);
+        PostgresArticleInbox inbox = new(dataSource);
+        Assert.True(await inbox.TryAddAsync(article, CancellationToken.None));
+
+        PostgresArticleFeedbackStore feedbackStore = new(dataSource);
+        await feedbackStore.SetAsync(
+            article.Id,
+            "discord:42",
+            ArticleFeedbackKind.Hidden,
+            now,
+            CancellationToken.None);
+
+        PostgresArticleRankingReader reader = new(dataSource);
+        IReadOnlyList<RankedArticle> hiddenSearch = await reader.SearchAsync(
+            new ArticleSearchQuery(
+                searchToken,
+                now.AddMinutes(-1),
+                ArticleTopic.None,
+                25,
+                "discord:42"),
+            CancellationToken.None);
+        IReadOnlyList<RankedArticle> visibleSearch = await reader.SearchAsync(
+            new ArticleSearchQuery(
+                searchToken,
+                now.AddMinutes(-1),
+                ArticleTopic.None,
+                25,
+                "discord:99"),
+            CancellationToken.None);
+        IReadOnlyList<RankedArticle> hiddenTop = await reader.GetTopAsync(
+            new ArticleRankingQuery(
+                now.AddMinutes(-1),
+                ArticleTopic.None,
+                100,
+                "discord:42"),
+            CancellationToken.None);
+
+        Assert.Null(FindArticle(hiddenSearch, article.Id));
+        Assert.NotNull(FindArticle(visibleSearch, article.Id));
+        Assert.Null(FindArticle(hiddenTop, article.Id));
+    }
+
     private static RankedArticle? FindArticle(
         IReadOnlyList<RankedArticle> articles,
         Guid articleId)
