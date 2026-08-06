@@ -102,10 +102,13 @@ public sealed class PostgresArticleSummaryCache : IArticleSummaryCache
             NpgsqlDbType = NpgsqlDbType.Jsonb,
             Value = summaryJson
         });
-        command.Parameters.AddWithValue(
-            entry.ProviderResponseId is null
+        command.Parameters.Add(new NpgsqlParameter
+        {
+            NpgsqlDbType = NpgsqlDbType.Varchar,
+            Value = entry.ProviderResponseId is null
                 ? DBNull.Value
-                : entry.ProviderResponseId);
+                : entry.ProviderResponseId
+        });
         command.Parameters.AddWithValue(entry.GeneratedAt);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
