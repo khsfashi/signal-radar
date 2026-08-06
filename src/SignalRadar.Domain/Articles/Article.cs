@@ -9,7 +9,8 @@ public sealed class Article
         string source,
         string? externalId,
         DateTimeOffset publishedAt,
-        DateTimeOffset collectedAt)
+        DateTimeOffset collectedAt,
+        ArticleAssessment assessment)
     {
         Id = id;
         Title = title;
@@ -18,6 +19,7 @@ public sealed class Article
         ExternalId = externalId;
         PublishedAt = publishedAt;
         CollectedAt = collectedAt;
+        Assessment = assessment;
     }
 
     public Guid Id { get; }
@@ -34,13 +36,16 @@ public sealed class Article
 
     public DateTimeOffset CollectedAt { get; }
 
+    public ArticleAssessment Assessment { get; }
+
     public static Article Create(
         string title,
         Uri canonicalUrl,
         string source,
         DateTimeOffset publishedAt,
         DateTimeOffset collectedAt,
-        string? externalId = null)
+        string? externalId = null,
+        ArticleAssessment? assessment = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(title);
         ArgumentNullException.ThrowIfNull(canonicalUrl);
@@ -69,7 +74,8 @@ public sealed class Article
             source.Trim(),
             normalizedExternalId,
             publishedAt.ToUniversalTime(),
-            collectedAt.ToUniversalTime());
+            collectedAt.ToUniversalTime(),
+            assessment ?? ArticleAssessment.Unclassified);
     }
 
     private static string? NormalizeExternalId(string? externalId)
