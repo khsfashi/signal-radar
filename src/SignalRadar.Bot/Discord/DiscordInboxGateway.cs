@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Discord;
 using Discord.WebSocket;
 
@@ -7,7 +8,7 @@ public sealed class DiscordSocketMessageMapper
 {
     public bool TryMap(
         SocketMessage message,
-        out DiscordMessageEnvelope? envelope)
+        [NotNullWhen(true)] out DiscordMessageEnvelope? envelope)
     {
         ArgumentNullException.ThrowIfNull(message);
         envelope = null;
