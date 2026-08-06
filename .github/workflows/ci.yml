@@ -12,7 +12,7 @@ permissions:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     services:
       postgres:
@@ -48,3 +48,6 @@ jobs:
         env:
           SIGNAL_RADAR_TEST_DATABASE_CONNECTION_STRING: Host=localhost;Port=5432;Database=signal_radar_test;Username=signal_radar;Password=signal-radar-test;Maximum Pool Size=5
         run: dotnet test SignalRadar.sln --configuration Release --no-build --collect:"XPlat Code Coverage"
+
+      - name: Build production container
+        run: docker build --tag signal-radar:ci .
