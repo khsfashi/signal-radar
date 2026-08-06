@@ -1,5 +1,5 @@
-using System.Collections.Concurrent;
 using SignalRadar.Application.Articles;
+using SignalRadar.Application.Discord;
 
 namespace SignalRadar.Bot.Discord;
 
@@ -31,41 +31,6 @@ public sealed class DiscordMessageAccessPolicy
         return !_options.RequireAutomatedAuthor
             || message.AuthorIsBot
             || message.AuthorIsWebhook;
-    }
-}
-
-public interface IDiscordMessageReceiptStore
-{
-    public ValueTask<bool> TryBeginAsync(
-        ulong messageId,
-        CancellationToken cancellationToken);
-
-    public ValueTask AbandonAsync(
-        ulong messageId,
-        CancellationToken cancellationToken);
-}
-
-public sealed class InMemoryDiscordMessageReceiptStore : IDiscordMessageReceiptStore
-{
-    private readonly ConcurrentDictionary<ulong, byte> _messageIds = new();
-
-    public int Count => _messageIds.Count;
-
-    public ValueTask<bool> TryBeginAsync(
-        ulong messageId,
-        CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        return ValueTask.FromResult(_messageIds.TryAdd(messageId, 0));
-    }
-
-    public ValueTask AbandonAsync(
-        ulong messageId,
-        CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        _messageIds.TryRemove(messageId, out _);
-        return ValueTask.CompletedTask;
     }
 }
 
@@ -128,11 +93,11 @@ public sealed class DiscordInboxProcessor
                 DiscordInboxStatus.IgnoredNoArticle);
         }
 
-        bool claimed = await _receiptStore
+        DiscordMessageReceiptLease? lease = await _receiptStore
             .TryBeginAsync(message.MessageId, cancellationToken)
             .ConfigureAwait(false);
 
-        if (!claimed)
+        if (lease is null)
         {
             return new DiscordInboxResult(
                 message.MessageId,
@@ -143,6 +108,10 @@ public sealed class DiscordInboxProcessor
         {
             CollectArticleResult articleResult = await _collectArticle
                 .ExecuteAsync(candidate, cancellationToken)
+                .ConfigureAwait(false);
+
+            await _receiptStore
+                .CompleteAsync(lease, cancellationToken)
                 .ConfigureAwait(false);
 
             DiscordInboxStatus status = articleResult.Status == CollectArticleStatus.Added
@@ -157,7 +126,7 @@ public sealed class DiscordInboxProcessor
         catch
         {
             await _receiptStore
-                .AbandonAsync(message.MessageId, CancellationToken.None)
+                .AbandonAsync(lease, CancellationToken.None)
                 .ConfigureAwait(false);
             throw;
         }
