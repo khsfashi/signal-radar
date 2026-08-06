@@ -1,0 +1,12 @@
+.git
+.github
+**/bin
+**/obj
+**/TestResults
+.env
+config/feed-sources.json
+config/github-repositories.json
+config/ranking-profile.json
+.vs
+.vscode
+.idea
