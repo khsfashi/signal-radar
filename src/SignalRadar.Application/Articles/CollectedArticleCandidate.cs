@@ -4,4 +4,5 @@ public sealed record CollectedArticleCandidate(
     string Title,
     string Url,
     string Source,
-    DateTimeOffset PublishedAt);
+    DateTimeOffset PublishedAt,
+    string? ExternalId = null);
