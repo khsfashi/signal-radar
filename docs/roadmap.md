@@ -53,7 +53,8 @@
 - [x] Add starter official feeds and selected GitHub Release sources.
 - [x] Add CI validation for unit tests, PostgreSQL integration tests, and the production container build.
 - [x] Complete the initial security, migration, and failure-recovery review.
-- [ ] Merge the completed PR and create the `v0.1.0` tag/release.
+- [x] Mark the completed pull request ready for review.
+- [ ] Merge to `main` and create the `v0.1.0` tag/release.
 
 ## Post-v0.1 backlog
 
