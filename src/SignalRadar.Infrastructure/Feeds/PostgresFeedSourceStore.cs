@@ -183,8 +183,8 @@ public sealed class PostgresFeedSourceStore : IFeedSourceStore
         await using NpgsqlCommand command = _dataSource.CreateCommand(sql);
         command.Parameters.AddWithValue(source.SourceId);
         command.Parameters.AddWithValue(source.LeaseToken);
-        AddNullableText(command, "etag", etag);
-        AddNullableTimestamp(command, "last_modified", lastModified);
+        AddNullableText(command, etag);
+        AddNullableTimestamp(command, lastModified);
         command.Parameters.AddWithValue(completedAt.Add(source.PollingInterval));
         command.Parameters.AddWithValue(completedAt);
         await EnsureSingleUpdateAsync(command, cancellationToken).ConfigureAwait(false);
@@ -222,32 +222,34 @@ public sealed class PostgresFeedSourceStore : IFeedSourceStore
         command.Parameters.AddWithValue(source.ConsecutiveFailures + 1);
         command.Parameters.AddWithValue(failedAt);
         command.Parameters.AddWithValue(error.Length <= 2000 ? error : error[..2000]);
-        AddNullableTimestamp(command, "quarantine_until", quarantineUntil);
+        AddNullableTimestamp(command, quarantineUntil);
         await EnsureSingleUpdateAsync(command, cancellationToken).ConfigureAwait(false);
     }
 
     private static void AddNullableText(
         NpgsqlCommand command,
-        string name,
         string? value)
     {
-        NpgsqlParameter parameter = command.Parameters.Add(
-            name,
-            NpgsqlDbType.Text);
-        parameter.Value = (object?)value ?? DBNull.Value;
+        NpgsqlParameter parameter = new()
+        {
+            NpgsqlDbType = NpgsqlDbType.Text,
+            Value = (object?)value ?? DBNull.Value
+        };
+        command.Parameters.Add(parameter);
     }
 
     private static void AddNullableTimestamp(
         NpgsqlCommand command,
-        string name,
         DateTimeOffset? value)
     {
-        NpgsqlParameter parameter = command.Parameters.Add(
-            name,
-            NpgsqlDbType.TimestampTz);
-        parameter.Value = value.HasValue
-            ? (object)value.Value
-            : DBNull.Value;
+        NpgsqlParameter parameter = new()
+        {
+            NpgsqlDbType = NpgsqlDbType.TimestampTz,
+            Value = value.HasValue
+                ? (object)value.Value.ToUniversalTime()
+                : DBNull.Value
+        };
+        command.Parameters.Add(parameter);
     }
 
     private static async ValueTask EnsureSingleUpdateAsync(
