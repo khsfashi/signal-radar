@@ -10,7 +10,9 @@
 - [x] Add an isolated Discord.Net adapter and allow-list policy.
 - [x] Parse GeekNews-style messages and embeds.
 - [x] Persist Discord receipt leases.
-- [ ] Add save, dismiss, search, and export interactions.
+- [x] Add private `/top` and `/search` interactions.
+- [x] Connect interested, not-interested, and hidden buttons.
+- [ ] Add saved-item lists and Markdown export interactions.
 
 ## M2 — Persistent collection
 
@@ -28,8 +30,8 @@
 - [x] Persist inspectable score components and profile versions.
 - [x] Store explicit interested, not-interested, and hidden feedback per actor.
 - [x] Query ranked articles with bounded feedback adjustment.
+- [x] Route ranked reads and explicit feedback through Discord interactions.
 - [ ] Add title-similarity novelty scoring and negative-keyword penalties.
-- [ ] Connect Discord reactions and route ranked items to channels.
 
 ## M4 — Summaries and exports
 
