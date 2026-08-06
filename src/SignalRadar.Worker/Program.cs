@@ -300,12 +300,23 @@ try
             receiptStore,
             collectArticle);
         DiscordSocketMessageMapper mapper = new();
+        PostgresArticleRankingReader rankingReader = new(dataSource);
+        PostgresArticleFeedbackStore feedbackStore = new(dataSource);
+        DiscordArticleInteractionService interactionService = new(
+            rankingReader,
+            feedbackStore,
+            timeProvider);
+        DiscordArticleInteractionHandler interactionHandler = new(
+            discordOptions,
+            interactionService,
+            Console.WriteLine);
 
         discordGateway = new DiscordInboxGateway(
             discordOptions,
             processor,
             mapper,
-            Console.WriteLine);
+            Console.WriteLine,
+            interactionHandler);
         runningTasks.Add(discordGateway.RunAsync(lifetime.Token));
     }
 
