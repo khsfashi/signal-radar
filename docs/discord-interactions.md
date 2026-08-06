@@ -39,13 +39,28 @@ Options:
 
 ### `/export`
 
-Exports the invoking user's saved articles as a UTF-8 Markdown file in a private response. The file contains source links, publication and save times, deterministic topics, and current effective scores. It is provider-neutral and can be supplied manually to ChatGPT, Gemini, or another analysis tool without configuring an LLM API key in Signal Radar.
+Exports the invoking user's saved articles as a UTF-8 Markdown file in a private response. The file contains source links, publication and save times, deterministic topics, and current effective scores. It is provider-neutral and can be supplied manually to another analysis tool without configuring an LLM API key in Signal Radar.
 
 Options:
 
 - `days`: saved within 1 to 3650 days, default 365.
 - `topic`: optional topic slug.
 - `limit`: 1 to 100, default 100.
+
+### `/summarize`
+
+This command is registered only when an article-summary provider is configured. It creates a private structured briefing from the invoking user's saved article metadata.
+
+Options:
+
+- `days`: saved within 1 to 3650 days, default 30.
+- `topic`: optional topic slug.
+- `limit`: 1 to 20, default 10.
+- `language`: `ko` or `en`, default `ko`.
+
+The command defers its initial interaction because a provider request can take longer than Discord's immediate-response window. It then sends an ephemeral follow-up embed containing an overview, key signals, why they may matter, next checks, and caveats.
+
+The current source material is metadata-only: title, source, link, timestamps, deterministic topics, and scores. The result footer states that linked article bodies were not read. Identical provider, model, prompt, language, and ordered article input uses the PostgreSQL-cached result.
 
 Supported topic slugs:
 
@@ -84,8 +99,8 @@ No Discord user ID is written into the export file. Saved rows remain private to
 
 ## Response limits
 
-Interactive article results are ephemeral and contain at most five embeds. Each article consumes one component row with four buttons, matching Discord's five-row message-component limit. Markdown export is also ephemeral and produces one bounded attachment.
+Interactive article results are ephemeral and contain at most five embeds. Each article consumes one component row with four buttons, matching Discord's five-row message-component limit. Markdown export is ephemeral and produces one bounded attachment. Structured summaries produce one bounded ephemeral embed.
 
 ## Command synchronization
 
-The ready handler bulk-overwrites the application's guild command set with Signal Radar's current command definitions. This makes schema changes deterministic and immediately visible for guild commands. Any additional commands for the same Discord application should therefore be added to the same code-controlled command set.
+The ready handler bulk-overwrites the application's guild command set with Signal Radar's current command definitions. This makes schema changes deterministic and immediately visible for guild commands. `/summarize` is included only when its provider runtime is enabled. Any additional commands for the same Discord application should therefore be added to the same code-controlled command set.
