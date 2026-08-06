@@ -13,15 +13,15 @@ Signal Radar is a personal technology-intelligence pipeline for collecting, norm
 
 ## Repository status
 
-This repository is in the bootstrap phase. The first milestone establishes the .NET solution boundaries and a small, testable article-ingestion vertical slice.
+The repository currently has a working Discord ingestion boundary and PostgreSQL-backed article and receipt persistence. Ranking, additional collectors, and export workflows remain future milestones.
 
 ## Technology baseline
 
 - .NET 10 LTS
 - C#
-- PostgreSQL for persistent storage
+- PostgreSQL with Npgsql
 - Docker Compose for local infrastructure
-- xUnit for tests
+- xUnit for unit and PostgreSQL integration tests
 - GitHub Actions for build and test validation
 
 ## Quick start
@@ -32,21 +32,26 @@ Requirements:
 - Docker with Docker Compose
 
 ```bash
+cp .env.example .env
+docker compose up -d postgres
 dotnet restore SignalRadar.sln
 dotnet build SignalRadar.sln --configuration Release
 dotnet test SignalRadar.sln --configuration Release --no-build
-docker compose up -d postgres
 ```
 
-Run the Discord inbox worker:
+Export the variables from `.env` through your preferred local environment loader, then run:
 
 ```bash
 dotnet run --project src/SignalRadar.Worker
 ```
 
+At startup, the worker acquires a PostgreSQL advisory lock, applies pending embedded SQL migrations transactionally, verifies the database with a health query, and only then connects to Discord.
+
 ## Configuration
 
 Copy `.env.example` to `.env` for local infrastructure. Never commit bot tokens, LLM API keys, database passwords, or Discord identifiers.
+
+`DATABASE_CONNECTION_STRING` is consumed by the worker. `POSTGRES_*` variables configure the local Docker container.
 
 ## Documentation
 
@@ -64,4 +69,4 @@ The worker connects to Discord through `Discord.Net.WebSocket` and accepts messa
 5. Set `DISCORD_ALLOWED_GUILD_IDS` and `DISCORD_ALLOWED_CHANNEL_IDS` to comma-separated Discord snowflake IDs.
 6. Set `DISCORD_ALLOWED_AUTHOR_IDS` to the GeekNews bot or webhook user ID when known.
 
-The token is read only from `DISCORD_BOT_TOKEN`; it must never be committed. The current receipt store and article inbox are intentionally in-memory and will be replaced by PostgreSQL persistence in the next milestone.
+The token is read only from `DISCORD_BOT_TOKEN`; it must never be committed. Article URLs are protected by a PostgreSQL unique index. Discord deliveries use leased receipt records so an interrupted message can be retried after its lease expires, while completed messages remain idempotent across restarts.
