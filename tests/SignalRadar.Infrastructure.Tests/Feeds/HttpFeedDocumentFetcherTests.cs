@@ -59,7 +59,7 @@ public sealed class HttpFeedDocumentFetcherTests
 
         FeedFetchResult result = await fetcher.FetchAsync(
             source,
-            TestContext.Current.CancellationToken);
+            CancellationToken.None);
 
         Assert.Equal(FeedFetchStatus.Downloaded, result.Status);
         Assert.Equal("\"v2\"", result.ETag);
