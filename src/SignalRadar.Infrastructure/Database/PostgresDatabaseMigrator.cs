@@ -42,12 +42,12 @@ public sealed class PostgresDatabaseMigrator
         await ExecuteNonQueryAsync(
             connection,
             transaction,
-            CreateMigrationTableSql,
+            AcquireMigrationLockSql,
             cancellationToken).ConfigureAwait(false);
         await ExecuteNonQueryAsync(
             connection,
             transaction,
-            AcquireMigrationLockSql,
+            CreateMigrationTableSql,
             cancellationToken).ConfigureAwait(false);
 
         Assembly assembly = typeof(PostgresDatabaseMigrator).Assembly;
