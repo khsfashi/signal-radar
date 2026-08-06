@@ -3,6 +3,8 @@ using System.Text;
 using Discord;
 using Discord.WebSocket;
 using SignalRadar.Application.Articles;
+using SignalRadar.Application.Digests;
+using SignalRadar.Application.Operations;
 using SignalRadar.Application.Summaries;
 using SignalRadar.Domain.Articles;
 
@@ -18,8 +20,11 @@ public sealed class DiscordArticleInteractionHandler
     private const int DefaultDisplayLimit = 5;
     private const int DefaultExportLimit = 100;
     private const int DefaultSummaryLimit = 10;
+    private const int DefaultDigestLimit = 10;
     private readonly DiscordInboxOptions _options;
     private readonly DiscordArticleInteractionService _service;
+    private readonly GenerateArticleDigestUseCase? _digestUseCase;
+    private readonly ISignalRadarStatusReader? _statusReader;
     private readonly Action<string> _log;
     private readonly SemaphoreSlim _registrationLock = new(1, 1);
     private bool _commandsRegistered;
@@ -27,10 +32,14 @@ public sealed class DiscordArticleInteractionHandler
     public DiscordArticleInteractionHandler(
         DiscordInboxOptions options,
         DiscordArticleInteractionService service,
-        Action<string>? log = null)
+        Action<string>? log = null,
+        GenerateArticleDigestUseCase? digestUseCase = null,
+        ISignalRadarStatusReader? statusReader = null)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _service = service ?? throw new ArgumentNullException(nameof(service));
+        _digestUseCase = digestUseCase;
+        _statusReader = statusReader;
         _log = log ?? (static _ => { });
     }
 
@@ -57,6 +66,16 @@ public sealed class DiscordArticleInteractionHandler
             if (_service.SummaryEnabled)
             {
                 commands.Add(BuildSummarizeCommand());
+            }
+
+            if (_digestUseCase is not null)
+            {
+                commands.Add(BuildDigestCommand());
+            }
+
+            if (_statusReader is not null)
+            {
+                commands.Add(BuildStatusCommand());
             }
 
             ApplicationCommandProperties[] commandArray = [.. commands];
@@ -115,6 +134,12 @@ public sealed class DiscordArticleInteractionHandler
                     break;
                 case "summarize":
                     await HandleSummarizeAsync(command).ConfigureAwait(false);
+                    break;
+                case "digest":
+                    await HandleDigestAsync(command).ConfigureAwait(false);
+                    break;
+                case "status":
+                    await HandleStatusAsync(command).ConfigureAwait(false);
                     break;
                 default:
                     await command.RespondAsync(
@@ -367,6 +392,62 @@ public sealed class DiscordArticleInteractionHandler
         await command.FollowupAsync(
             text: $"저장 기사 {result.Summary.ArticleCount}건의 구조화 요약입니다.",
             embed: BuildSummaryEmbed(result),
+            ephemeral: true,
+            allowedMentions: AllowedMentions.None).ConfigureAwait(false);
+    }
+
+    private async Task HandleDigestAsync(SocketSlashCommand command)
+    {
+        GenerateArticleDigestUseCase useCase = _digestUseCase
+            ?? throw new InvalidOperationException("Digest generation is not configured.");
+        ArticleDigestPeriod period = ParseDigestPeriod(
+            GetStringOption(command, "period"));
+        int limit = GetIntegerOption(command, "limit", DefaultDigestLimit);
+        ArticleTopic topic = DiscordArticleInteractionCodec.ParseTopic(
+            GetStringOption(command, "topic"));
+        ArticleDigest digest = await useCase.GenerateAsync(
+            DiscordArticleInteractionCodec.CreateActorId(command.User.Id),
+            period,
+            topic,
+            limit,
+            CancellationToken.None).ConfigureAwait(false);
+        await command.RespondAsync(
+            DiscordDigestMessageFactory.GetHeading(digest),
+            embed: DiscordDigestMessageFactory.BuildEmbed(digest),
+            ephemeral: true,
+            allowedMentions: AllowedMentions.None).ConfigureAwait(false);
+    }
+
+    private async Task HandleStatusAsync(SocketSlashCommand command)
+    {
+        ISignalRadarStatusReader reader = _statusReader
+            ?? throw new InvalidOperationException("Status reporting is not configured.");
+        SignalRadarStatusSnapshot status = await reader.ReadAsync(
+            CancellationToken.None).ConfigureAwait(false);
+        TimeSpan uptime = status.CheckedAt - status.StartedAt;
+        string description = string.Create(
+            CultureInfo.InvariantCulture,
+            $"DB 연결 정상 · 가동 {uptime.Days}일 {uptime.Hours}시간 {uptime.Minutes}분\n"
+                + $"기사 {status.ArticleCount:N0} · 저장 {status.SavedArticleCount:N0}\n"
+                + $"Feed {status.EnabledFeedCount} · 외부 API {status.EnabledExternalSourceCount}\n"
+                + $"요약 캐시 {status.SummaryCacheCount:N0} · 본문 캐시 {status.ArticleContentCacheCount:N0}\n"
+                + $"랭킹 프로필: {status.RankingProfileVersion}\n"
+                + $"요약 Provider: {status.SummaryProvider}\n"
+                + $"예약 Digest: {(status.DigestSchedulerEnabled ? "활성" : "비활성")}");
+        EmbedBuilder builder = new EmbedBuilder()
+            .WithTitle("Signal Radar 상태")
+            .WithDescription(description)
+            .WithTimestamp(status.CheckedAt);
+
+        if (status.LatestCollectedAt.HasValue)
+        {
+            builder.WithFooter(string.Create(
+                CultureInfo.InvariantCulture,
+                $"최근 수집: {status.LatestCollectedAt.Value:yyyy-MM-dd HH:mm:ss} UTC"));
+        }
+
+        await command.RespondAsync(
+            embed: builder.Build(),
             ephemeral: true,
             allowedMentions: AllowedMentions.None).ConfigureAwait(false);
     }
@@ -705,12 +786,53 @@ public sealed class DiscordArticleInteractionHandler
         return builder.Build();
     }
 
+    private static SlashCommandProperties BuildDigestCommand()
+    {
+        SlashCommandBuilder builder = new SlashCommandBuilder()
+            .WithName("digest")
+            .WithDescription("최근 일간 또는 주간 상위 기사를 다이제스트로 조회합니다.");
+        builder.AddOption(
+            "period",
+            ApplicationCommandOptionType.String,
+            "daily 또는 weekly(기본 daily)",
+            minLength: 5,
+            maxLength: 6);
+        AddTopicOption(builder);
+        builder.AddOption(
+            "limit",
+            ApplicationCommandOptionType.Integer,
+            "기사 수(1~10, 기본 10개)",
+            minValue: 1,
+            maxValue: 10);
+        return builder.Build();
+    }
+
+    private static SlashCommandProperties BuildStatusCommand()
+    {
+        return new SlashCommandBuilder()
+            .WithName("status")
+            .WithDescription("Signal Radar의 DB, 수집, 캐시, 런타임 상태를 확인합니다.")
+            .Build();
+    }
+
     private static void AddTopicOption(SlashCommandBuilder builder)
     {
         builder.AddOption(
             "topic",
             ApplicationCommandOptionType.String,
             "all, ai, game-industry, game-development, developer-tools, research, business, security");
+    }
+
+    private static ArticleDigestPeriod ParseDigestPeriod(string? value)
+    {
+        return value?.Trim().ToLowerInvariant() switch
+        {
+            null or "" or "daily" => ArticleDigestPeriod.Daily,
+            "weekly" => ArticleDigestPeriod.Weekly,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(value),
+                "Digest period must be 'daily' or 'weekly'.")
+        };
     }
 
     private static int GetIntegerOption(
