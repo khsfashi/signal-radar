@@ -1,5 +1,6 @@
 using System.Globalization;
 using SignalRadar.Application.Articles;
+using SignalRadar.Application.Summaries;
 using SignalRadar.Domain.Articles;
 
 namespace SignalRadar.Bot.Discord;
@@ -12,6 +13,7 @@ public sealed class DiscordArticleInteractionService
     private readonly IArticleSavedReader _savedReader;
     private readonly SavedArticleMarkdownExporter _markdownExporter;
     private readonly TimeProvider _timeProvider;
+    private readonly GenerateArticleSummaryUseCase? _summaryUseCase;
 
     public DiscordArticleInteractionService(
         IArticleRankingReader rankingReader,
@@ -19,7 +21,8 @@ public sealed class DiscordArticleInteractionService
         IArticleSaveStore saveStore,
         IArticleSavedReader savedReader,
         SavedArticleMarkdownExporter markdownExporter,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        GenerateArticleSummaryUseCase? summaryUseCase = null)
     {
         _rankingReader = rankingReader
             ?? throw new ArgumentNullException(nameof(rankingReader));
@@ -33,7 +36,10 @@ public sealed class DiscordArticleInteractionService
             ?? throw new ArgumentNullException(nameof(markdownExporter));
         _timeProvider = timeProvider
             ?? throw new ArgumentNullException(nameof(timeProvider));
+        _summaryUseCase = summaryUseCase;
     }
+
+    public bool SummaryEnabled => _summaryUseCase is not null;
 
     public ValueTask<IReadOnlyList<RankedArticle>> GetTopAsync(
         ulong userId,
@@ -105,6 +111,37 @@ public sealed class DiscordArticleInteractionService
             limit,
             cancellationToken).ConfigureAwait(false);
         return _markdownExporter.Create(articles, _timeProvider.GetUtcNow());
+    }
+
+    public async ValueTask<GeneratedArticleSummary?> SummarizeSavedAsync(
+        ulong userId,
+        int days,
+        ArticleTopic topic,
+        int limit,
+        string language,
+        CancellationToken cancellationToken)
+    {
+        GenerateArticleSummaryUseCase useCase = _summaryUseCase
+            ?? throw new InvalidOperationException(
+                "Article summary generation is not configured.");
+        ValidateUserId(userId);
+        ValidateWindow(days, limit, maximumDays: 3650, maximumLimit: 20);
+        IReadOnlyList<SavedArticle> articles = await GetSavedAsync(
+            userId,
+            days,
+            topic,
+            limit,
+            cancellationToken).ConfigureAwait(false);
+
+        if (articles.Count == 0)
+        {
+            return null;
+        }
+
+        return await useCase.GenerateAsync(
+            articles,
+            language,
+            cancellationToken).ConfigureAwait(false);
     }
 
     public ValueTask SetFeedbackAsync(
