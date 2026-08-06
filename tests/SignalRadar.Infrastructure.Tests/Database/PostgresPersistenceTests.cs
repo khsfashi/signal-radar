@@ -1,4 +1,5 @@
 using Npgsql;
+using SignalRadar.Application.Discord;
 using SignalRadar.Domain.Articles;
 using SignalRadar.Infrastructure.Articles;
 using SignalRadar.Infrastructure.Database;
@@ -23,7 +24,7 @@ public sealed class PostgresPersistenceTests
         await using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(
             connectionString);
         PostgresDatabaseMigrator migrator = new(dataSource);
-        await migrator.MigrateAsync(TestContext.Current.CancellationToken);
+        await migrator.MigrateAsync(CancellationToken.None);
         await ResetTablesAsync(dataSource);
 
         Article article = Article.Create(
@@ -38,10 +39,10 @@ public sealed class PostgresPersistenceTests
 
         Assert.True(await firstArticleStore.TryAddAsync(
             article,
-            TestContext.Current.CancellationToken));
+            CancellationToken.None));
         Assert.False(await secondArticleStore.TryAddAsync(
             article,
-            TestContext.Current.CancellationToken));
+            CancellationToken.None));
 
         PostgresDiscordMessageReceiptStore firstReceiptStore = new(
             dataSource,
@@ -52,21 +53,21 @@ public sealed class PostgresPersistenceTests
 
         DiscordMessageReceiptLease? lease = await firstReceiptStore.TryBeginAsync(
             ulong.MaxValue,
-            TestContext.Current.CancellationToken);
+            CancellationToken.None);
 
         Assert.NotNull(lease);
         await firstReceiptStore.CompleteAsync(
             lease,
-            TestContext.Current.CancellationToken);
+            CancellationToken.None);
         Assert.Null(await secondReceiptStore.TryBeginAsync(
             ulong.MaxValue,
-            TestContext.Current.CancellationToken));
+            CancellationToken.None));
     }
 
     private static async Task ResetTablesAsync(NpgsqlDataSource dataSource)
     {
         await using NpgsqlCommand command = dataSource.CreateCommand(
             "TRUNCATE TABLE discord_message_receipts, articles;");
-        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        await command.ExecuteNonQueryAsync(CancellationToken.None);
     }
 }
