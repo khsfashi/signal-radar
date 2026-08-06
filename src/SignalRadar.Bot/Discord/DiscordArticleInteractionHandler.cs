@@ -490,6 +490,12 @@ public sealed class DiscordArticleInteractionHandler
     {
         ArticleSummaryCacheEntry summary = result.Summary;
         ArticleSummaryContent content = summary.Content;
+        string sourceLabel = string.Equals(
+            summary.PromptVersion,
+            GenerateArticleSummaryUseCase.ContentPromptVersion,
+            StringComparison.Ordinal)
+            ? "본문 추출 포함"
+            : "저장 기사 메타데이터만 사용";
         EmbedBuilder builder = new EmbedBuilder()
             .WithTitle(Truncate(content.Title, EmbedBuilder.MaxTitleLength))
             .WithDescription(Truncate(content.Overview, EmbedBuilder.MaxDescriptionLength))
@@ -501,7 +507,7 @@ public sealed class DiscordArticleInteractionHandler
             .WithFooter(
                 $"{summary.Provider} / {summary.Model} · "
                     + (result.CacheHit ? "cache hit" : "generated")
-                    + " · 저장 기사 메타데이터만 사용")
+                    + $" · {sourceLabel}")
             .WithTimestamp(summary.GeneratedAt);
 
         if (content.WatchNext.Count > 0)
@@ -676,7 +682,7 @@ public sealed class DiscordArticleInteractionHandler
     {
         SlashCommandBuilder builder = new SlashCommandBuilder()
             .WithName("summarize")
-            .WithDescription("내 저장 기사 메타데이터를 구조화된 AI 브리핑으로 요약합니다.");
+            .WithDescription("내 저장 기사의 본문과 메타데이터를 구조화된 AI 브리핑으로 요약합니다.");
         builder.AddOption(
             "days",
             ApplicationCommandOptionType.Integer,
