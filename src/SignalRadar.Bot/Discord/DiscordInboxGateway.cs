@@ -2,6 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using Discord;
 using Discord.WebSocket;
 using SignalRadar.Application.Digests;
+using SignalRadar.Application.Publishing;
 
 namespace SignalRadar.Bot.Discord;
 
@@ -141,6 +142,59 @@ public sealed class DiscordInboxGateway : IDisposable
             {
                 CancelToken = cancellationToken
             }).ConfigureAwait(false);
+        return message.Id;
+    }
+
+    public async ValueTask<ulong> SendAutomaticTopicArticleAsync(
+        ulong channelId,
+        AutomaticTopicPublicationCandidate article,
+        CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(article);
+
+        if (!_options.AllowedChannelIds.Contains(channelId))
+        {
+            throw new InvalidOperationException(
+                "Automatic topic channel is not in DISCORD_ALLOWED_CHANNEL_IDS.");
+        }
+
+        await _ready.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        SocketChannel channel = _client.GetChannel(channelId)
+            ?? throw new InvalidOperationException(
+                $"Discord channel {channelId} is unavailable.");
+        RequestOptions requestOptions = new()
+        {
+            CancelToken = cancellationToken
+        };
+        Embed embed = DiscordAutomaticTopicMessageFactory.BuildEmbed(article);
+        MessageComponent components =
+            DiscordAutomaticTopicMessageFactory.BuildComponents(article);
+
+        if (channel is IForumChannel forumChannel)
+        {
+            IThreadChannel thread = await forumChannel.CreatePostAsync(
+                DiscordAutomaticTopicMessageFactory.GetForumTitle(article),
+                text: DiscordAutomaticTopicMessageFactory.GetHeading(article),
+                embed: embed,
+                options: requestOptions,
+                allowedMentions: AllowedMentions.None,
+                components: components).ConfigureAwait(false);
+            return thread.Id;
+        }
+
+        if (channel is not IMessageChannel messageChannel)
+        {
+            throw new InvalidOperationException(
+                $"Discord channel {channelId} cannot receive public article messages.");
+        }
+
+        IUserMessage message = await messageChannel.SendMessageAsync(
+            text: DiscordAutomaticTopicMessageFactory.GetHeading(article),
+            embed: embed,
+            allowedMentions: AllowedMentions.None,
+            components: components,
+            options: requestOptions).ConfigureAwait(false);
         return message.Id;
     }
 
