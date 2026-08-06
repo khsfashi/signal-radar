@@ -5,11 +5,14 @@ Signal Radar is a personal technology-intelligence pipeline for collecting, norm
 ## Current capabilities
 
 - Receives articles from an allow-listed Discord guild and channel.
-- Polls configured RSS 2.0, RSS 1.0-style, and Atom feeds.
+- Polls configured RSS and Atom feeds.
+- Polls GitHub Releases for configured repositories.
+- Polls Hacker News top, best, or new story lists.
 - Uses conditional HTTP requests with ETag and Last-Modified validators.
-- Canonicalizes article URLs before PostgreSQL insertion.
-- Preserves idempotency across restarts with database unique constraints and leases.
-- Tracks feed success, failure, retry, and quarantine state.
+- Canonicalizes URLs before PostgreSQL insertion.
+- Deduplicates by canonical URL and, where available, stable `(source, external_id)` identity.
+- Preserves idempotency across restarts with database constraints and expiring leases.
+- Tracks source success, failure, retry, and quarantine state.
 - Runs PostgreSQL migrations with checksum validation and an advisory lock.
 - Builds and runs unit plus PostgreSQL integration tests in GitHub Actions.
 
@@ -17,11 +20,12 @@ LLM calls are intentionally not part of ingestion. Deterministic filtering and d
 
 ## Quick start
 
-Start PostgreSQL and prepare a local source file:
+Start PostgreSQL and prepare local source files:
 
 ```bash
 docker compose up -d postgres
 cp config/feed-sources.example.json config/feed-sources.json
+cp config/github-repositories.example.json config/github-repositories.json
 ```
 
 The worker reads operating-system environment variables directly. `.env` is used by Docker Compose but is not automatically loaded by the .NET process.
@@ -30,9 +34,11 @@ The worker reads operating-system environment variables directly. `.env` is used
 DATABASE_CONNECTION_STRING=Host=localhost;Port=5432;Database=signal_radar;Username=signal_radar;Password=replace-me
 DISCORD_ENABLED=true
 FEED_SOURCE_CONFIG_PATH=config/feed-sources.json
+GITHUB_RELEASE_SOURCE_CONFIG_PATH=config/github-repositories.json
+HACKER_NEWS_ENABLED=true
 ```
 
-Enable one or both ingestion pipelines, then run:
+Enable at least one ingestion pipeline, then run:
 
 ```bash
 dotnet restore SignalRadar.sln
@@ -62,15 +68,23 @@ Feed definitions are synchronized into PostgreSQL at startup:
 
 See [Feed sources](docs/feed-sources.md) for retries, quarantine, HTTP limits, and security behavior.
 
+## GitHub Releases and Hacker News
+
+GitHub repository definitions are loaded from a local JSON file. `GITHUB_API_TOKEN` is optional for public repositories but useful for authenticated rate limits. Hacker News is configured with environment variables and uses the official Firebase API.
+
+See [External sources](docs/external-sources.md) for source identity, filters, HTTP limits, and configuration.
+
 ## Persistence guarantees
 
 - Canonical article URLs are unique.
-- Discord messages and feed sources use expiring tokenized leases.
-- Five consecutive feed failures quarantine a source for six hours.
+- Stable external items are unique by `(source, external_id)` even when their URLs change.
+- Discord messages, feeds, and external API sources use expiring tokenized leases.
+- Five consecutive polling failures quarantine a source for six hours.
 - Applied SQL migration checksums are verified on every startup.
 
 ## Documentation
 
 - [Architecture](docs/architecture.md)
 - [Feed sources](docs/feed-sources.md)
+- [External sources](docs/external-sources.md)
 - [Roadmap](docs/roadmap.md)
