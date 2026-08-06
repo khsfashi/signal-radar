@@ -22,7 +22,7 @@ public sealed class PostgresFeedSourceStoreTests
         await using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(
             connectionString);
         PostgresDatabaseMigrator migrator = new(dataSource);
-        await migrator.MigrateAsync(TestContext.Current.CancellationToken);
+        await migrator.MigrateAsync(CancellationToken.None);
         await ResetTableAsync(dataSource);
 
         PostgresFeedSourceStore firstStore = new(dataSource);
@@ -34,16 +34,16 @@ public sealed class PostgresFeedSourceStoreTests
                     new Uri("https://example.com/feed.xml"),
                     TimeSpan.FromMinutes(15))
             ],
-            TestContext.Current.CancellationToken);
+            CancellationToken.None);
 
         FeedSourceLease lease = Assert.Single(await firstStore.ClaimDueAsync(
             1,
             TimeSpan.FromMinutes(2),
-            TestContext.Current.CancellationToken));
+            CancellationToken.None));
         Assert.Empty(await secondStore.ClaimDueAsync(
             1,
             TimeSpan.FromMinutes(2),
-            TestContext.Current.CancellationToken));
+            CancellationToken.None));
 
         DateTimeOffset failedAt = DateTimeOffset.UtcNow;
         await firstStore.CompleteFailureAsync(
@@ -52,12 +52,12 @@ public sealed class PostgresFeedSourceStoreTests
             failedAt,
             failedAt.AddHours(1),
             null,
-            TestContext.Current.CancellationToken);
+            CancellationToken.None);
 
         Assert.Empty(await secondStore.ClaimDueAsync(
             1,
             TimeSpan.FromMinutes(2),
-            TestContext.Current.CancellationToken));
+            CancellationToken.None));
         Assert.Equal(1, await ReadFailureCountAsync(dataSource));
     }
 
@@ -65,7 +65,7 @@ public sealed class PostgresFeedSourceStoreTests
     {
         await using NpgsqlCommand command = dataSource.CreateCommand(
             "TRUNCATE TABLE feed_sources;");
-        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+        await command.ExecuteNonQueryAsync(CancellationToken.None);
     }
 
     private static async Task<int> ReadFailureCountAsync(
@@ -73,8 +73,9 @@ public sealed class PostgresFeedSourceStoreTests
     {
         await using NpgsqlCommand command = dataSource.CreateCommand(
             "SELECT consecutive_failures FROM feed_sources LIMIT 1;");
-        object? result = await command.ExecuteScalarAsync(
-            TestContext.Current.CancellationToken);
-        return Convert.ToInt32(result, System.Globalization.CultureInfo.InvariantCulture);
+        object? result = await command.ExecuteScalarAsync(CancellationToken.None);
+        return Convert.ToInt32(
+            result,
+            System.Globalization.CultureInfo.InvariantCulture);
     }
 }
