@@ -47,18 +47,6 @@ public sealed class SummaryRuntime : IDisposable
         }
 
         string providerName = configuredProvider.Trim().ToLowerInvariant();
-
-        if (providerName != "openai-responses")
-        {
-            throw new InvalidOperationException(
-                "SUMMARY_PROVIDER currently supports only 'openai-responses' or 'disabled'.");
-        }
-
-        string apiKey = GetRequiredEnvironmentVariable("OPENAI_API_KEY");
-        string model = GetRequiredEnvironmentVariable("OPENAI_SUMMARY_MODEL");
-        Uri endpoint = ParseEndpoint(
-            Environment.GetEnvironmentVariable("OPENAI_RESPONSES_ENDPOINT")
-                ?? "https://api.openai.com/v1/responses");
         HttpClient providerHttpClient = CreateHttpClient(
             ParseInteger(
                 "SUMMARY_HTTP_MAX_CONNECTIONS_PER_SERVER",
@@ -74,21 +62,21 @@ public sealed class SummaryRuntime : IDisposable
 
         try
         {
-            OpenAiResponsesArticleSummaryProvider provider = new(
+            TimeSpan providerTimeout = TimeSpan.FromSeconds(ParseInteger(
+                "SUMMARY_HTTP_TIMEOUT_SECONDS",
+                defaultValue: 60,
+                minimum: 5,
+                maximum: 300));
+            int maximumProviderResponseBytes = ParseInteger(
+                "SUMMARY_HTTP_MAX_RESPONSE_BYTES",
+                defaultValue: 256 * 1024,
+                minimum: 1024,
+                maximum: 4 * 1024 * 1024);
+            IArticleSummaryProvider provider = CreateProvider(
+                providerName,
                 providerHttpClient,
-                endpoint,
-                apiKey,
-                model,
-                TimeSpan.FromSeconds(ParseInteger(
-                    "SUMMARY_HTTP_TIMEOUT_SECONDS",
-                    defaultValue: 60,
-                    minimum: 5,
-                    maximum: 300)),
-                ParseInteger(
-                    "SUMMARY_HTTP_MAX_RESPONSE_BYTES",
-                    defaultValue: 256 * 1024,
-                    minimum: 1024,
-                    maximum: 4 * 1024 * 1024));
+                providerTimeout,
+                maximumProviderResponseBytes);
             PostgresArticleSummaryCache summaryCache = new(dataSource);
             PostgresArticleContentCache contentCache = new(dataSource);
             ArticleContentHttpOptions contentOptions = new(
@@ -185,6 +173,67 @@ public sealed class SummaryRuntime : IDisposable
         _contentHttpClient?.Dispose();
     }
 
+    private static IArticleSummaryProvider CreateProvider(
+        string providerName,
+        HttpClient httpClient,
+        TimeSpan timeout,
+        int maximumResponseBytes)
+    {
+        return providerName switch
+        {
+            "openai-responses" => CreateOpenAiProvider(
+                httpClient,
+                timeout,
+                maximumResponseBytes),
+            "gemini-generate-content" => CreateGeminiProvider(
+                httpClient,
+                timeout,
+                maximumResponseBytes),
+            _ => throw new InvalidOperationException(
+                "SUMMARY_PROVIDER supports 'openai-responses', "
+                    + "'gemini-generate-content', or 'disabled'.")
+        };
+    }
+
+    private static IArticleSummaryProvider CreateOpenAiProvider(
+        HttpClient httpClient,
+        TimeSpan timeout,
+        int maximumResponseBytes)
+    {
+        return new OpenAiResponsesArticleSummaryProvider(
+            httpClient,
+            ParseEndpoint(
+                Environment.GetEnvironmentVariable("OPENAI_RESPONSES_ENDPOINT")
+                    ?? "https://api.openai.com/v1/responses",
+                "OPENAI_RESPONSES_ENDPOINT"),
+            GetRequiredEnvironmentVariable("OPENAI_API_KEY"),
+            GetRequiredEnvironmentVariable("OPENAI_SUMMARY_MODEL"),
+            timeout,
+            maximumResponseBytes);
+    }
+
+    private static IArticleSummaryProvider CreateGeminiProvider(
+        HttpClient httpClient,
+        TimeSpan timeout,
+        int maximumResponseBytes)
+    {
+        string model = GetRequiredEnvironmentVariable("GEMINI_SUMMARY_MODEL");
+        string defaultEndpoint = string.Create(
+            System.Globalization.CultureInfo.InvariantCulture,
+            $"https://generativelanguage.googleapis.com/v1beta/models/"
+                + $"{Uri.EscapeDataString(model)}:generateContent");
+        return new GeminiGenerateContentArticleSummaryProvider(
+            httpClient,
+            ParseEndpoint(
+                Environment.GetEnvironmentVariable("GEMINI_GENERATE_CONTENT_ENDPOINT")
+                    ?? defaultEndpoint,
+                "GEMINI_GENERATE_CONTENT_ENDPOINT"),
+            GetRequiredEnvironmentVariable("GEMINI_API_KEY"),
+            model,
+            timeout,
+            maximumResponseBytes);
+    }
+
     private static HttpClient CreateHttpClient(int maximumConnectionsPerServer)
     {
         SocketsHttpHandler handler = new()
@@ -201,12 +250,12 @@ public sealed class SummaryRuntime : IDisposable
         };
     }
 
-    private static Uri ParseEndpoint(string value)
+    private static Uri ParseEndpoint(string value, string variableName)
     {
         return Uri.TryCreate(value, UriKind.Absolute, out Uri? endpoint)
             ? endpoint
             : throw new InvalidOperationException(
-                "OPENAI_RESPONSES_ENDPOINT must be an absolute URI.");
+                $"{variableName} must be an absolute URI.");
     }
 
     private static string GetRequiredEnvironmentVariable(string name)
