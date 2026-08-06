@@ -49,7 +49,7 @@ Options:
 
 ### `/summarize`
 
-This command is registered only when an article-summary provider is configured. It creates a private structured briefing from the invoking user's saved article metadata.
+This command is registered only when an article-summary provider is configured. It creates a private structured briefing from the invoking user's saved articles.
 
 Options:
 
@@ -58,9 +58,11 @@ Options:
 - `limit`: 1 to 20, default 10.
 - `language`: `ko` or `en`, default `ko`.
 
-The command defers its initial interaction because a provider request can take longer than Discord's immediate-response window. It then sends an ephemeral follow-up embed containing an overview, key signals, why they may matter, next checks, and caveats.
+The command defers its initial interaction because article retrieval and a provider request can take longer than Discord's immediate-response window. It then sends an ephemeral follow-up embed containing an overview, key signals, why they may matter, next checks, and caveats.
 
-The current source material is metadata-only: title, source, link, timestamps, deterministic topics, and scores. The result footer states that linked article bodies were not read. Identical provider, model, prompt, language, and ordered article input uses the PostgreSQL-cached result.
+For each selected article, Signal Radar attempts a bounded robots-aware HTML retrieval and extraction. Successfully cleaned text excerpts are supplied with the stored metadata. Robots-disallowed, unavailable, non-HTML, too-large, or too-short pages fall back to metadata and an extraction-status note without failing the entire briefing.
+
+The result Footer says `본문 추출 포함` for the content-aware prompt version and `저장 기사 메타데이터만 사용` for legacy metadata-only cached results. Identical provider, model, prompt version, language, exact instructions, ordered metadata, extraction status, content hash, and bounded excerpt uses the PostgreSQL-cached result.
 
 Supported topic slugs:
 
