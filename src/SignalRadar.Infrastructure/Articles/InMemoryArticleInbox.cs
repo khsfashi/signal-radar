@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using SignalRadar.Application.Articles;
 using SignalRadar.Domain.Articles;
 
@@ -6,10 +5,21 @@ namespace SignalRadar.Infrastructure.Articles;
 
 public sealed class InMemoryArticleInbox : IArticleInbox
 {
-    private readonly ConcurrentDictionary<string, Article> _articles =
+    private readonly Lock _gate = new();
+    private readonly Dictionary<string, Article> _articlesByUrl =
         new(StringComparer.Ordinal);
+    private readonly HashSet<string> _externalKeys = new(StringComparer.Ordinal);
 
-    public int Count => _articles.Count;
+    public int Count
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _articlesByUrl.Count;
+            }
+        }
+    }
 
     public ValueTask<bool> TryAddAsync(
         Article article,
@@ -18,12 +28,40 @@ public sealed class InMemoryArticleInbox : IArticleInbox
         ArgumentNullException.ThrowIfNull(article);
         cancellationToken.ThrowIfCancellationRequested();
 
-        bool wasAdded = _articles.TryAdd(article.CanonicalUrl.AbsoluteUri, article);
-        return ValueTask.FromResult(wasAdded);
+        string canonicalUrl = article.CanonicalUrl.AbsoluteUri;
+        string? externalKey = article.ExternalId is null
+            ? null
+            : CreateExternalKey(article.Source, article.ExternalId);
+
+        lock (_gate)
+        {
+            if (_articlesByUrl.ContainsKey(canonicalUrl)
+                || externalKey is not null && _externalKeys.Contains(externalKey))
+            {
+                return ValueTask.FromResult(false);
+            }
+
+            _articlesByUrl.Add(canonicalUrl, article);
+
+            if (externalKey is not null)
+            {
+                _externalKeys.Add(externalKey);
+            }
+
+            return ValueTask.FromResult(true);
+        }
     }
 
     public IReadOnlyCollection<Article> Snapshot()
     {
-        return _articles.Values.ToArray();
+        lock (_gate)
+        {
+            return _articlesByUrl.Values.ToArray();
+        }
+    }
+
+    private static string CreateExternalKey(string source, string externalId)
+    {
+        return string.Concat(source, "\n", externalId);
     }
 }
