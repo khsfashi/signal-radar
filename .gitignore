@@ -25,6 +25,7 @@ _ReSharper*/
 appsettings.Development.json
 secrets.json
 config/feed-sources.json
+config/github-repositories.json
 
 # Logs and local databases
 *.log
