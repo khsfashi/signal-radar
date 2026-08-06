@@ -2,49 +2,39 @@
 
 ## M0 — Repository bootstrap
 
-- [x] Establish solution boundaries.
-- [x] Add strict compiler settings.
-- [x] Add CI build and tests.
-- [x] Add PostgreSQL Docker Compose configuration.
-- [x] Implement a minimal URL-normalized article ingestion slice.
+- [x] Establish solution boundaries, strict compiler settings, CI, and PostgreSQL Docker Compose.
+- [x] Implement URL-normalized article ingestion.
 
 ## M1 — Discord inbox
 
-- [x] Add Discord.Net through an adapter isolated in `SignalRadar.Bot`.
-- [x] Restrict processing to configured guild and channel identifiers.
-- [x] Parse GeekNews bot messages and embeds.
-- [x] Persist Discord message identifiers for idempotency.
-- [ ] Add save, dismiss, and export interactions.
+- [x] Add an isolated Discord.Net adapter and allow-list policy.
+- [x] Parse GeekNews-style messages and embeds.
+- [x] Persist Discord receipt leases.
+- [ ] Add save, dismiss, search, and export interactions.
 
 ## M2 — Persistent collection
 
-- [x] Add PostgreSQL schema and transactional embedded migrations.
-- [x] Add PostgreSQL article and leased Discord receipt stores.
-- [x] Add startup database health validation.
-- [x] Add PostgreSQL integration tests in GitHub Actions.
-- [ ] Add RSS and Atom collectors.
+- [x] Add ordered checksum-verified PostgreSQL migrations.
+- [x] Add RSS and Atom collectors.
+- [x] Add source health, retries, leases, and failure quarantine.
+- [x] Add canonical URL uniqueness.
 - [ ] Add GitHub Releases and Hacker News collectors.
-- [ ] Add retry policy, source health, and failure quarantine.
-- [ ] Add source and external-ID unique constraints.
+- [ ] Add source and external-ID identity where stable IDs exist.
 
 ## M3 — Ranking and feedback
 
-- [ ] Add source trust, novelty, practical impact, and momentum scoring.
+- [ ] Add trust, novelty, impact, and momentum scoring.
 - [ ] Add topic and negative-keyword weights.
-- [ ] Learn user preference weights from explicit reactions.
-- [ ] Route ranked items to Discord topic channels.
+- [ ] Learn from explicit reactions and route ranked items.
 
 ## M4 — Summaries and exports
 
 - [ ] Export selected articles as Markdown.
-- [ ] Add provider-neutral `ILlmProvider`.
-- [ ] Add structured summary schemas.
-- [ ] Cache summaries by content hash, provider, model, and prompt version.
-- [ ] Keep manual export usable without any API key.
+- [ ] Add provider-neutral structured LLM summaries and caching.
+- [ ] Keep manual export usable without an API key.
 
 ## M5 — Trend radar
 
-- [ ] Cluster articles describing the same event.
+- [ ] Cluster the same event across independent sources.
 - [ ] Compare short-window volume against a longer baseline.
-- [ ] Require independent sources for high-confidence trends.
 - [ ] Produce daily and weekly trend reports.

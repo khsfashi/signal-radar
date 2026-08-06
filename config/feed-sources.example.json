@@ -1,0 +1,8 @@
+[
+  {
+    "name": "example-official-feed",
+    "url": "https://example.com/feed.xml",
+    "pollIntervalMinutes": 15,
+    "enabled": false
+  }
+]

@@ -24,6 +24,7 @@ _ReSharper*/
 !.env.example
 appsettings.Development.json
 secrets.json
+config/feed-sources.json
 
 # Logs and local databases
 *.log
