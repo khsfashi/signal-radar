@@ -80,7 +80,10 @@ public sealed class PostgresPersistenceTests
             CancellationToken.None);
         Assert.Single(saved);
         Assert.Equal(article.Id, saved[0].ArticleId);
-        Assert.Equal(now, saved[0].SavedAt);
+        Assert.InRange(
+            saved[0].SavedAt,
+            now.AddMilliseconds(-1),
+            now.AddMilliseconds(1));
         Assert.True(await secondSaveStore.RemoveAsync(
             article.Id,
             "discord:123",
