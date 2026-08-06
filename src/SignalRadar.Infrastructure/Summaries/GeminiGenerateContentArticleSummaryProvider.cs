@@ -146,7 +146,6 @@ public sealed class GeminiGenerateContentArticleSummaryProvider
             writer.WriteEndArray();
 
             writer.WriteStartObject("generationConfig");
-            writer.WriteNumber("temperature", 0.1m);
             writer.WriteStartObject("responseFormat");
             writer.WriteStartObject("text");
             writer.WriteString("mimeType", "application/json");
