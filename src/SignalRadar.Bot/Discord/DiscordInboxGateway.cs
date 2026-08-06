@@ -48,6 +48,7 @@ public sealed class DiscordInboxGateway : IDisposable
     private readonly DiscordInboxOptions _options;
     private readonly DiscordInboxProcessor _processor;
     private readonly DiscordSocketMessageMapper _mapper;
+    private readonly DiscordArticleInteractionHandler? _interactionHandler;
     private readonly DiscordSocketClient _client;
     private readonly Action<string> _log;
     private bool _disposed;
@@ -56,11 +57,13 @@ public sealed class DiscordInboxGateway : IDisposable
         DiscordInboxOptions options,
         DiscordInboxProcessor processor,
         DiscordSocketMessageMapper mapper,
-        Action<string>? log = null)
+        Action<string>? log = null,
+        DiscordArticleInteractionHandler? interactionHandler = null)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _processor = processor ?? throw new ArgumentNullException(nameof(processor));
         _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
+        _interactionHandler = interactionHandler;
         _log = log ?? (static _ => { });
 
         _client = new DiscordSocketClient(new DiscordSocketConfig
@@ -73,6 +76,13 @@ public sealed class DiscordInboxGateway : IDisposable
 
         _client.Log += HandleLogAsync;
         _client.MessageReceived += HandleMessageAsync;
+
+        if (_interactionHandler is not null)
+        {
+            _client.Ready += HandleReadyAsync;
+            _client.SlashCommandExecuted += HandleSlashCommandAsync;
+            _client.ButtonExecuted += HandleButtonAsync;
+        }
     }
 
     public async Task RunAsync(CancellationToken cancellationToken)
@@ -109,6 +119,13 @@ public sealed class DiscordInboxGateway : IDisposable
             return;
         }
 
+        if (_interactionHandler is not null)
+        {
+            _client.ButtonExecuted -= HandleButtonAsync;
+            _client.SlashCommandExecuted -= HandleSlashCommandAsync;
+            _client.Ready -= HandleReadyAsync;
+        }
+
         _client.MessageReceived -= HandleMessageAsync;
         _client.Log -= HandleLogAsync;
         _client.Dispose();
@@ -134,6 +151,24 @@ public sealed class DiscordInboxGateway : IDisposable
         {
             _log($"DiscordMessage={message.MessageId}, Error={exception}");
         }
+    }
+
+    private Task HandleReadyAsync()
+    {
+        return _interactionHandler?.RegisterCommandsAsync(_client)
+            ?? Task.CompletedTask;
+    }
+
+    private Task HandleSlashCommandAsync(SocketSlashCommand command)
+    {
+        return _interactionHandler?.HandleSlashCommandAsync(command)
+            ?? Task.CompletedTask;
+    }
+
+    private Task HandleButtonAsync(SocketMessageComponent component)
+    {
+        return _interactionHandler?.HandleButtonAsync(component)
+            ?? Task.CompletedTask;
     }
 
     private Task HandleLogAsync(LogMessage message)
