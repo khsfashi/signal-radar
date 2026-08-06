@@ -1,9 +1,11 @@
 using Npgsql;
+using SignalRadar.Application.Articles;
 using SignalRadar.Application.Discord;
 using SignalRadar.Domain.Articles;
 using SignalRadar.Infrastructure.Articles;
 using SignalRadar.Infrastructure.Database;
 using SignalRadar.Infrastructure.Discord;
+using SignalRadar.Infrastructure.Ranking;
 using Xunit;
 
 namespace SignalRadar.Infrastructure.Tests.Database;
@@ -27,19 +29,20 @@ public sealed class PostgresPersistenceTests
         await migrator.MigrateAsync(CancellationToken.None);
         await ResetTablesAsync(dataSource);
 
+        DateTimeOffset now = DateTimeOffset.UtcNow;
         Article article = Article.Create(
             "PostgreSQL persistence",
             new Uri("https://example.com/postgres"),
             "integration-test",
-            DateTimeOffset.UtcNow,
-            DateTimeOffset.UtcNow,
+            now,
+            now,
             "external-1");
         Article sameExternalItemAtDifferentUrl = Article.Create(
             "PostgreSQL persistence mirror",
             new Uri("https://mirror.example.com/postgres"),
             "integration-test",
-            DateTimeOffset.UtcNow,
-            DateTimeOffset.UtcNow,
+            now,
+            now,
             "external-1");
 
         PostgresArticleInbox firstArticleStore = new(dataSource);
@@ -53,6 +56,34 @@ public sealed class PostgresPersistenceTests
             CancellationToken.None));
         Assert.False(await secondArticleStore.TryAddAsync(
             sameExternalItemAtDifferentUrl,
+            CancellationToken.None));
+
+        PostgresArticleSaveStore firstSaveStore = new(dataSource);
+        PostgresArticleSaveStore secondSaveStore = new(dataSource);
+        Assert.True(await firstSaveStore.TryAddAsync(
+            article.Id,
+            "discord:123",
+            now,
+            CancellationToken.None));
+        Assert.False(await secondSaveStore.TryAddAsync(
+            article.Id,
+            "discord:123",
+            now.AddMinutes(1),
+            CancellationToken.None));
+
+        IReadOnlyList<SavedArticle> saved = await secondSaveStore.GetSavedAsync(
+            new SavedArticleQuery(
+                now.AddDays(-1),
+                ArticleTopic.None,
+                10,
+                "discord:123"),
+            CancellationToken.None);
+        Assert.Single(saved);
+        Assert.Equal(article.Id, saved[0].ArticleId);
+        Assert.Equal(now, saved[0].SavedAt);
+        Assert.True(await secondSaveStore.RemoveAsync(
+            article.Id,
+            "discord:123",
             CancellationToken.None));
 
         PostgresDiscordMessageReceiptStore firstReceiptStore = new(
@@ -78,7 +109,7 @@ public sealed class PostgresPersistenceTests
     private static async Task ResetTablesAsync(NpgsqlDataSource dataSource)
     {
         await using NpgsqlCommand command = dataSource.CreateCommand(
-            "TRUNCATE TABLE article_feedback, discord_message_receipts, articles;");
+            "TRUNCATE TABLE article_saves, article_feedback, discord_message_receipts, articles;");
         await command.ExecuteNonQueryAsync(CancellationToken.None);
     }
 }
