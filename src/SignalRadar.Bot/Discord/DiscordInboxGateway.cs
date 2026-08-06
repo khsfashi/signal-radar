@@ -60,7 +60,7 @@ public sealed class DiscordInboxGateway : IDisposable
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _processor = processor ?? throw new ArgumentNullException(nameof(processor));
         _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
-        _log = log ?? static _ => { };
+        _log = log ?? (static _ => { });
 
         _client = new DiscordSocketClient(new DiscordSocketConfig
         {
