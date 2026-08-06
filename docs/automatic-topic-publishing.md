@@ -12,6 +12,8 @@ Automatic topic publications are normal Discord resources, not ephemeral interac
 - Feedback and save button confirmations remain private to the user who clicked them.
 - Slash-command results remain private by design.
 
+The bot needs permission to send messages in text destinations and to create public threads/posts in Forum destinations.
+
 ## Configuration
 
 Enable the publisher and map one primary topic to each destination channel:
