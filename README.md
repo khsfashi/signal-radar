@@ -104,7 +104,7 @@ Gemini Generate Content:
 ```env
 SUMMARY_PROVIDER=gemini-generate-content
 GEMINI_API_KEY=replace-with-real-key
-GEMINI_SUMMARY_MODEL=gemini-2.5-flash
+GEMINI_SUMMARY_MODEL=gemini-3.6-flash
 ```
 
 Both adapters implement the same application interface, request JSON-schema-constrained output, and pass the result through local validation before caching.
