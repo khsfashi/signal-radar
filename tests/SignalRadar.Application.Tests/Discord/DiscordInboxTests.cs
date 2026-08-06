@@ -1,6 +1,7 @@
 using SignalRadar.Application.Articles;
 using SignalRadar.Bot.Discord;
 using SignalRadar.Infrastructure.Articles;
+using SignalRadar.Infrastructure.Discord;
 using Xunit;
 
 namespace SignalRadar.Application.Tests.Discord;
