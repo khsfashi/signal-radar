@@ -12,6 +12,7 @@ using SignalRadar.Infrastructure.Feeds;
 using SignalRadar.Infrastructure.Ranking;
 using SignalRadar.Worker.ExternalSources;
 using SignalRadar.Worker.Feeds;
+using SignalRadar.Worker.Summaries;
 
 using CancellationTokenSource shutdown = new();
 using CancellationTokenSource lifetime =
@@ -69,6 +70,16 @@ CollectArticleUseCase collectArticle = new(
     urlNormalizer,
     assessmentPolicy,
     timeProvider);
+using SummaryRuntime summaryRuntime = SummaryRuntime.Create(
+    dataSource,
+    timeProvider);
+
+if (summaryRuntime.Enabled)
+{
+    Console.WriteLine(
+        $"Enabled article summaries with {summaryRuntime.Description}.");
+}
+
 List<Task> runningTasks = [];
 DiscordInboxGateway? discordGateway = null;
 HttpClient? feedHttpClient = null;
@@ -310,7 +321,8 @@ try
             saveStore,
             saveStore,
             markdownExporter,
-            timeProvider);
+            timeProvider,
+            summaryRuntime.UseCase);
         DiscordArticleInteractionHandler interactionHandler = new(
             discordOptions,
             interactionService,
