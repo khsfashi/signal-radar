@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text.RegularExpressions;
 using SignalRadar.Application.Articles;
 
@@ -8,7 +9,7 @@ public sealed partial class DiscordMessageArticleCandidateFactory
     public bool TryCreate(
         DiscordMessageEnvelope message,
         string source,
-        out CollectedArticleCandidate? candidate)
+        [NotNullWhen(true)] out CollectedArticleCandidate? candidate)
     {
         ArgumentNullException.ThrowIfNull(message);
         candidate = null;
@@ -46,8 +47,8 @@ public sealed partial class DiscordMessageArticleCandidateFactory
 
     private static bool TryExtractEmbed(
         DiscordEmbedEnvelope embed,
-        out string? title,
-        out string? url)
+        [NotNullWhen(true)] out string? title,
+        [NotNullWhen(true)] out string? url)
     {
         title = null;
         url = NormalizeExplicitUrl(embed.Url);
@@ -74,8 +75,8 @@ public sealed partial class DiscordMessageArticleCandidateFactory
 
     private static bool TryExtractText(
         string messageContent,
-        out string? title,
-        out string? url)
+        [NotNullWhen(true)] out string? title,
+        [NotNullWhen(true)] out string? url)
     {
         title = null;
         url = null;
@@ -90,7 +91,9 @@ public sealed partial class DiscordMessageArticleCandidateFactory
         return true;
     }
 
-    private static bool TryFindUrl(string text, out string? url)
+    private static bool TryFindUrl(
+        string text,
+        [NotNullWhen(true)] out string? url)
     {
         Match match = HttpUrlRegex().Match(text);
 
