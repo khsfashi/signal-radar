@@ -6,7 +6,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-signal_radar}
       POSTGRES_USER: ${POSTGRES_USER:-signal_radar}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
@@ -17,6 +17,38 @@ services:
       timeout: 3s
       retries: 10
       start_period: 10s
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: signal-radar-worker
+    restart: unless-stopped
+    init: true
+    env_file:
+      - .env
+    environment:
+      SIGNAL_RADAR_ENVIRONMENT: Production
+      DATABASE_CONNECTION_STRING: Host=postgres;Port=5432;Database=${POSTGRES_DB:-signal_radar};Username=${POSTGRES_USER:-signal_radar};Password=${POSTGRES_PASSWORD};Maximum Pool Size=20
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./config:/app/config:ro
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 30s
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   signal-radar-postgres:
