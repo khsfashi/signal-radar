@@ -1,4 +1,5 @@
 using Npgsql;
+using NpgsqlTypes;
 using SignalRadar.Application.Articles;
 using SignalRadar.Domain.Articles;
 
@@ -12,10 +13,11 @@ public sealed class PostgresArticleInbox : IArticleInbox
             canonical_url,
             title,
             source,
+            external_id,
             published_at,
             collected_at)
-        VALUES ($1, $2, $3, $4, $5, $6)
-        ON CONFLICT (canonical_url) DO NOTHING;
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        ON CONFLICT DO NOTHING;
         """;
 
     private readonly NpgsqlDataSource _dataSource;
@@ -36,6 +38,8 @@ public sealed class PostgresArticleInbox : IArticleInbox
         command.Parameters.AddWithValue(article.CanonicalUrl.AbsoluteUri);
         command.Parameters.AddWithValue(article.Title);
         command.Parameters.AddWithValue(article.Source);
+        NpgsqlParameter externalId = command.Parameters.Add(NpgsqlDbType.Text);
+        externalId.Value = (object?)article.ExternalId ?? DBNull.Value;
         command.Parameters.AddWithValue(article.PublishedAt);
         command.Parameters.AddWithValue(article.CollectedAt);
 
