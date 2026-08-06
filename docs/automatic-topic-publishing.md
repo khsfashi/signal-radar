@@ -48,7 +48,9 @@ The publisher selects articles whose primary topic matches the route and whose e
 
 The first time the feature is enabled, Signal Radar stores an activation timestamp. Articles collected before that timestamp are not backfilled, which prevents an existing archive from flooding Discord. The activation timestamp survives Worker restarts, so articles collected during downtime remain eligible.
 
-Each `(article, channel, publication kind)` has a PostgreSQL receipt. Expiring leases prevent concurrent duplicate sends. Completed receipts permanently suppress redelivery, while failed sends become eligible after `DISCORD_TOPIC_RETRY_SECONDS`.
+Each `(article, channel, publication kind)` has a PostgreSQL receipt. Expiring leases prevent concurrent duplicate sends. Completed receipts permanently suppress normal redelivery, while failed sends become eligible after `DISCORD_TOPIC_RETRY_SECONDS`.
+
+Discord delivery and PostgreSQL receipt completion are separate network operations. A Worker crash after Discord accepts a message but before the receipt is completed can therefore produce a rare duplicate after lease expiry. The design otherwise provides durable at-least-once processing with completed-delivery deduplication.
 
 ## Commands
 
