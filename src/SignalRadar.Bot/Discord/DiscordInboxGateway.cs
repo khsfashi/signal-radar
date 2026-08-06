@@ -51,6 +51,7 @@ public sealed class DiscordInboxGateway : IDisposable
     private readonly DiscordInboxProcessor _processor;
     private readonly DiscordSocketMessageMapper _mapper;
     private readonly DiscordArticleInteractionHandler? _interactionHandler;
+    private readonly DiscordHelpCommandHandler? _helpCommandHandler;
     private readonly DiscordSocketClient _client;
     private readonly Action<string> _log;
     private readonly TaskCompletionSource<bool> _ready = new(
@@ -62,12 +63,14 @@ public sealed class DiscordInboxGateway : IDisposable
         DiscordInboxProcessor processor,
         DiscordSocketMessageMapper mapper,
         Action<string>? log = null,
-        DiscordArticleInteractionHandler? interactionHandler = null)
+        DiscordArticleInteractionHandler? interactionHandler = null,
+        DiscordHelpCommandHandler? helpCommandHandler = null)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _processor = processor ?? throw new ArgumentNullException(nameof(processor));
         _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
         _interactionHandler = interactionHandler;
+        _helpCommandHandler = helpCommandHandler;
         _log = log ?? (static _ => { });
 
         _client = new DiscordSocketClient(new DiscordSocketConfig
@@ -82,9 +85,13 @@ public sealed class DiscordInboxGateway : IDisposable
         _client.Ready += HandleReadyAsync;
         _client.MessageReceived += HandleMessageAsync;
 
-        if (_interactionHandler is not null)
+        if (_interactionHandler is not null || _helpCommandHandler is not null)
         {
             _client.SlashCommandExecuted += HandleSlashCommandAsync;
+        }
+
+        if (_interactionHandler is not null)
+        {
             _client.ButtonExecuted += HandleButtonAsync;
         }
     }
@@ -208,6 +215,10 @@ public sealed class DiscordInboxGateway : IDisposable
         if (_interactionHandler is not null)
         {
             _client.ButtonExecuted -= HandleButtonAsync;
+        }
+
+        if (_interactionHandler is not null || _helpCommandHandler is not null)
+        {
             _client.SlashCommandExecuted -= HandleSlashCommandAsync;
         }
 
@@ -248,10 +259,22 @@ public sealed class DiscordInboxGateway : IDisposable
             await _interactionHandler.RegisterCommandsAsync(_client)
                 .ConfigureAwait(false);
         }
+
+        if (_helpCommandHandler is not null)
+        {
+            await _helpCommandHandler.RegisterAsync(_client)
+                .ConfigureAwait(false);
+        }
     }
 
     private Task HandleSlashCommandAsync(SocketSlashCommand command)
     {
+        if (string.Equals(command.Data.Name, "help", StringComparison.Ordinal)
+            && _helpCommandHandler is not null)
+        {
+            return _helpCommandHandler.HandleAsync(command);
+        }
+
         return _interactionHandler?.HandleSlashCommandAsync(command)
             ?? Task.CompletedTask;
     }
