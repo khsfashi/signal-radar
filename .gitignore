@@ -26,6 +26,7 @@ appsettings.Development.json
 secrets.json
 config/feed-sources.json
 config/github-repositories.json
+config/ranking-profile.json
 
 # Logs and local databases
 *.log
