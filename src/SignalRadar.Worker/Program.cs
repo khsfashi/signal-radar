@@ -1,12 +1,15 @@
 using System.Net;
 using Npgsql;
 using SignalRadar.Application.Articles;
+using SignalRadar.Application.ExternalSources;
 using SignalRadar.Application.Feeds;
 using SignalRadar.Bot.Discord;
 using SignalRadar.Infrastructure.Articles;
 using SignalRadar.Infrastructure.Database;
 using SignalRadar.Infrastructure.Discord;
+using SignalRadar.Infrastructure.ExternalSources;
 using SignalRadar.Infrastructure.Feeds;
+using SignalRadar.Worker.ExternalSources;
 using SignalRadar.Worker.Feeds;
 
 using CancellationTokenSource shutdown = new();
@@ -23,8 +26,16 @@ bool discordEnabled = ParseBoolean("DISCORD_ENABLED", defaultValue: true);
 string? feedConfigurationPath = Environment.GetEnvironmentVariable(
     "FEED_SOURCE_CONFIG_PATH");
 bool feedsEnabled = !string.IsNullOrWhiteSpace(feedConfigurationPath);
+string? githubConfigurationPath = Environment.GetEnvironmentVariable(
+    "GITHUB_RELEASE_SOURCE_CONFIG_PATH");
+bool hackerNewsEnabled = ParseBoolean(
+    "HACKER_NEWS_ENABLED",
+    defaultValue: false);
+bool externalSourcesEnabled =
+    !string.IsNullOrWhiteSpace(githubConfigurationPath)
+    || hackerNewsEnabled;
 
-if (!discordEnabled && !feedsEnabled)
+if (!discordEnabled && !feedsEnabled && !externalSourcesEnabled)
 {
     throw new InvalidOperationException(
         "At least one ingestion pipeline must be enabled.");
@@ -51,6 +62,7 @@ CollectArticleUseCase collectArticle = new(
 List<Task> runningTasks = [];
 DiscordInboxGateway? discordGateway = null;
 HttpClient? feedHttpClient = null;
+HttpClient? externalHttpClient = null;
 
 try
 {
@@ -69,18 +81,12 @@ try
             .UpsertDefinitionsAsync(definitions, lifetime.Token)
             .ConfigureAwait(false);
 
-        SocketsHttpHandler handler = new()
-        {
-            AllowAutoRedirect = false,
-            AutomaticDecompression = DecompressionMethods.All,
-            MaxConnectionsPerServer = ParseInteger(
+        SocketsHttpHandler handler = CreateHttpHandler(
+            ParseInteger(
                 "FEED_HTTP_MAX_CONNECTIONS_PER_SERVER",
                 defaultValue: 8,
                 minimum: 1,
-                maximum: 32),
-            PooledConnectionLifetime = TimeSpan.FromMinutes(10),
-            PooledConnectionIdleTimeout = TimeSpan.FromMinutes(2)
-        };
+                maximum: 32));
         feedHttpClient = new HttpClient(handler, disposeHandler: true)
         {
             Timeout = Timeout.InfiniteTimeSpan
@@ -147,6 +153,119 @@ try
             $"Loaded {definitions.Count} RSS/Atom source definitions.");
     }
 
+    if (externalSourcesEnabled)
+    {
+        List<ExternalSourceDefinition> definitions = [];
+
+        if (!string.IsNullOrWhiteSpace(githubConfigurationPath))
+        {
+            GitHubReleaseSourceConfigurationLoader loader = new();
+            IReadOnlyList<ExternalSourceDefinition> githubDefinitions =
+                await loader.LoadAsync(
+                    githubConfigurationPath,
+                    lifetime.Token);
+            definitions.AddRange(githubDefinitions);
+        }
+
+        if (hackerNewsEnabled)
+        {
+            definitions.Add(HackerNewsSourceDefinitionFactory.Create(
+                Environment.GetEnvironmentVariable("HACKER_NEWS_STORY_LIST")
+                    ?? "topstories",
+                ParseInteger(
+                    "HACKER_NEWS_MAX_ITEMS",
+                    defaultValue: 50,
+                    minimum: 1,
+                    maximum: 100),
+                ParseInteger(
+                    "HACKER_NEWS_MIN_SCORE",
+                    defaultValue: 10,
+                    minimum: 0,
+                    maximum: 100_000),
+                TimeSpan.FromMinutes(ParseInteger(
+                    "HACKER_NEWS_POLL_INTERVAL_MINUTES",
+                    defaultValue: 5,
+                    minimum: 1,
+                    maximum: 1440))));
+        }
+
+        PostgresExternalSourceStore sourceStore = new(dataSource);
+        await sourceStore
+            .UpsertDefinitionsAsync(definitions, lifetime.Token)
+            .ConfigureAwait(false);
+
+        SocketsHttpHandler handler = CreateHttpHandler(
+            ParseInteger(
+                "EXTERNAL_HTTP_MAX_CONNECTIONS_PER_SERVER",
+                defaultValue: 8,
+                minimum: 1,
+                maximum: 32));
+        externalHttpClient = new HttpClient(handler, disposeHandler: true)
+        {
+            Timeout = Timeout.InfiniteTimeSpan
+        };
+        BoundedJsonHttpClient jsonClient = new(
+            externalHttpClient,
+            timeProvider,
+            TimeSpan.FromSeconds(ParseInteger(
+                "EXTERNAL_HTTP_TIMEOUT_SECONDS",
+                defaultValue: 20,
+                minimum: 1,
+                maximum: 120)),
+            ParseInteger(
+                "EXTERNAL_HTTP_MAX_RESPONSE_BYTES",
+                defaultValue: 4 * 1024 * 1024,
+                minimum: 1024,
+                maximum: 16 * 1024 * 1024),
+            ParseInteger(
+                "EXTERNAL_HTTP_MAX_ATTEMPTS",
+                defaultValue: 3,
+                minimum: 1,
+                maximum: 5));
+        List<IExternalSourceCollector> collectors =
+        [
+            new GitHubReleaseCollector(
+                jsonClient,
+                Environment.GetEnvironmentVariable("GITHUB_API_TOKEN")),
+            new HackerNewsCollector(
+                jsonClient,
+                ParseInteger(
+                    "HACKER_NEWS_ITEM_CONCURRENCY",
+                    defaultValue: 8,
+                    minimum: 1,
+                    maximum: 16))
+        ];
+        CollectExternalSourceUseCase collectExternalSource = new(
+            sourceStore,
+            collectors,
+            collectArticle,
+            timeProvider);
+        ExternalSourcePollingLoop pollingLoop = new(
+            sourceStore,
+            collectExternalSource,
+            timeProvider,
+            ParseInteger(
+                "EXTERNAL_POLL_BATCH_SIZE",
+                defaultValue: 4,
+                minimum: 1,
+                maximum: 32),
+            TimeSpan.FromSeconds(ParseInteger(
+                "EXTERNAL_LEASE_SECONDS",
+                defaultValue: 120,
+                minimum: 30,
+                maximum: 1800)),
+            TimeSpan.FromSeconds(ParseInteger(
+                "EXTERNAL_IDLE_DELAY_SECONDS",
+                defaultValue: 30,
+                minimum: 1,
+                maximum: 300)),
+            Console.WriteLine);
+
+        runningTasks.Add(pollingLoop.RunAsync(lifetime.Token));
+        Console.WriteLine(
+            $"Loaded {definitions.Count} external API source definitions.");
+    }
+
     if (discordEnabled)
     {
         DiscordInboxOptions discordOptions = new(
@@ -180,6 +299,12 @@ try
         runningTasks.Add(discordGateway.RunAsync(lifetime.Token));
     }
 
+    if (runningTasks.Count == 0)
+    {
+        throw new InvalidOperationException(
+            "No ingestion task was created from the current configuration.");
+    }
+
     Task firstCompleted = await Task.WhenAny(runningTasks).ConfigureAwait(false);
     lifetime.Cancel();
 
@@ -198,6 +323,19 @@ finally
     lifetime.Cancel();
     discordGateway?.Dispose();
     feedHttpClient?.Dispose();
+    externalHttpClient?.Dispose();
+}
+
+static SocketsHttpHandler CreateHttpHandler(int maxConnectionsPerServer)
+{
+    return new SocketsHttpHandler
+    {
+        AllowAutoRedirect = false,
+        AutomaticDecompression = DecompressionMethods.All,
+        MaxConnectionsPerServer = maxConnectionsPerServer,
+        PooledConnectionLifetime = TimeSpan.FromMinutes(10),
+        PooledConnectionIdleTimeout = TimeSpan.FromMinutes(2)
+    };
 }
 
 static string GetRequiredEnvironmentVariable(string name)
