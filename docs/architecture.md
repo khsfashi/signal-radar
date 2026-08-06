@@ -26,40 +26,61 @@ Domain <- Application <- Infrastructure
 ```
 
 - **Domain** contains stable business concepts and invariants.
-- **Application** contains use cases and ports.
-- **Infrastructure** implements persistence, HTTP clients, feed readers, and external providers.
+- **Application** contains use cases and persistence contracts.
+- **Infrastructure** implements PostgreSQL storage, migrations, URL normalization, and future external providers.
 - **Bot** adapts Discord input and interactions to application commands.
 - **Worker** is the composition root and background-process host.
 
-Domain and Application must not depend on Discord, PostgreSQL, HTTP libraries, or LLM SDKs.
+Domain and Application do not depend on Discord, PostgreSQL, HTTP libraries, or LLM SDKs.
 
-## Initial vertical slice
+## Current ingestion slice
 
-The bootstrap slice accepts an article candidate, canonicalizes its URL, creates a validated domain article, and inserts it into an inbox only when the canonical URL is new.
+The current slice accepts an allowed Discord message, extracts an article candidate, canonicalizes its URL, creates a validated domain article, and inserts it only when its canonical URL is new.
 
-The first duplicate key is the canonical URL. Later milestones add:
+LLMs are intentionally excluded from deterministic filtering and duplicate removal.
 
-1. source and external identifier
-2. content hash
-3. title fingerprint
-4. semantic event clustering
+## PostgreSQL persistence
 
-LLMs are intentionally excluded from deterministic duplicate removal.
+One long-lived, thread-safe `NpgsqlDataSource` owns connection pooling for the process. Individual operations open short-lived logical connections or commands and return them to the pool immediately.
+
+- `articles.canonical_url` has a unique index and is the final article duplicate guard.
+- Discord snowflakes use `numeric(20, 0)` so the entire unsigned 64-bit range is preserved.
+- Discord processing uses a tokenized lease rather than a permanent pre-processing marker.
+- Completed receipts remain idempotent across process restarts.
+- Interrupted receipts can be reclaimed after lease expiry.
+- A crash after article insertion but before receipt completion is safe: retry observes an article duplicate and completes the receipt.
+
+## Migrations
+
+SQL migrations are embedded in `SignalRadar.Infrastructure` and applied in filename order. Startup migration execution:
+
+1. opens a PostgreSQL connection and transaction,
+2. creates the migration ledger when necessary,
+3. acquires a transaction-scoped PostgreSQL advisory lock,
+4. verifies SHA-256 checksums for applied migrations,
+5. applies pending migrations,
+6. commits atomically,
+7. runs a database health query before connecting to Discord.
+
+This prevents concurrent worker instances from racing during schema initialization and prevents silently rewriting an already-applied migration.
 
 ## Performance principles
 
 - Avoid LLM calls before filtering and deduplication.
-- Prefer bounded channels for asynchronous pipelines.
-- Reuse `HttpClient` instances through `IHttpClientFactory`.
+- Use database unique constraints instead of read-before-write duplicate queries.
+- Keep database commands short and parameterized.
+- Prefer bounded channels for future asynchronous pipelines.
+- Reuse `HttpClient` instances through `IHttpClientFactory` when collectors are added.
 - Cache parsed source configuration and generated summaries.
 - Keep article bodies outside hot listing queries.
-- Use database unique constraints as the final duplicate guard.
 - Measure allocations and throughput before introducing distributed queues.
 
 ## Security boundaries
 
 - Process only explicitly allowed Discord guilds, channels, and users.
-- Never commit tokens or API keys.
+- Never commit tokens, database passwords, or API keys.
+- Send all SQL values through parameters.
+- Enforce length and range constraints at the database boundary.
 - Block private-network destinations before fetching user-controlled URLs.
 - Limit response size, redirect count, and request duration.
 - Preserve original URLs and evidence alongside generated summaries.
