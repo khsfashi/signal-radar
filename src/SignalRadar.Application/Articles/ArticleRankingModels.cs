@@ -24,7 +24,15 @@ public interface IArticleFeedbackStore
 public sealed record ArticleRankingQuery(
     DateTimeOffset Since,
     ArticleTopic TopicMask,
-    int Limit);
+    int Limit,
+    string? ActorId = null);
+
+public sealed record ArticleSearchQuery(
+    string Text,
+    DateTimeOffset Since,
+    ArticleTopic TopicMask,
+    int Limit,
+    string? ActorId = null);
 
 public sealed record RankedArticle(
     Guid ArticleId,
@@ -42,5 +50,9 @@ public interface IArticleRankingReader
 {
     public ValueTask<IReadOnlyList<RankedArticle>> GetTopAsync(
         ArticleRankingQuery query,
+        CancellationToken cancellationToken);
+
+    public ValueTask<IReadOnlyList<RankedArticle>> SearchAsync(
+        ArticleSearchQuery query,
         CancellationToken cancellationToken);
 }
