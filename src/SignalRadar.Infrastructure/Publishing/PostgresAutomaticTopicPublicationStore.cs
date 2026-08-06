@@ -30,10 +30,15 @@ public sealed class PostgresAutomaticTopicPublicationStore
         command.Parameters.AddWithValue(now.ToUniversalTime());
         object? value = await command.ExecuteScalarAsync(cancellationToken)
             .ConfigureAwait(false);
-        return value is DateTimeOffset activatedAt
-            ? activatedAt
-            : throw new InvalidDataException(
-                "Automatic topic publishing activation time was not returned.");
+
+        return value switch
+        {
+            DateTimeOffset activatedAt => activatedAt,
+            DateTime activatedAt => new DateTimeOffset(
+                DateTime.SpecifyKind(activatedAt, DateTimeKind.Utc)),
+            _ => throw new InvalidDataException(
+                "Automatic topic publishing activation time was not returned.")
+        };
     }
 
     public async ValueTask<IReadOnlyList<AutomaticTopicPublicationCandidate>> GetCandidatesAsync(
@@ -158,6 +163,7 @@ public sealed class PostgresAutomaticTopicPublicationStore
         }
 
         Guid token = Guid.NewGuid();
+        string normalizedKind = publicationKind.Trim();
         const string sql = """
             INSERT INTO automatic_topic_publication_receipts (
                 article_id,
@@ -180,7 +186,7 @@ public sealed class PostgresAutomaticTopicPublicationStore
         await using NpgsqlCommand command = _dataSource.CreateCommand(sql);
         command.Parameters.AddWithValue(articleId);
         command.Parameters.AddWithValue(ToNumeric(channelId));
-        command.Parameters.AddWithValue(publicationKind.Trim());
+        command.Parameters.AddWithValue(normalizedKind);
         command.Parameters.AddWithValue(token);
         command.Parameters.AddWithValue(now.ToUniversalTime());
         command.Parameters.AddWithValue(leaseDuration);
@@ -191,7 +197,7 @@ public sealed class PostgresAutomaticTopicPublicationStore
             ? new AutomaticTopicPublicationLease(
                 articleId,
                 channelId,
-                publicationKind.Trim(),
+                normalizedKind,
                 returnedToken)
             : null;
     }
@@ -295,7 +301,7 @@ public sealed class PostgresAutomaticTopicPublicationStore
 
     private static void ValidateQuery(AutomaticTopicPublicationQuery query)
     {
-        ValidateIdentity(Guid.NewGuid(), query.ChannelId, query.PublicationKind);
+        ValidateChannelAndKind(query.ChannelId, query.PublicationKind);
         int topicValue = (int)query.Topic;
 
         if (topicValue <= 0 || (topicValue & (topicValue - 1)) != 0)
@@ -324,6 +330,13 @@ public sealed class PostgresAutomaticTopicPublicationStore
             throw new ArgumentOutOfRangeException(nameof(articleId));
         }
 
+        ValidateChannelAndKind(channelId, publicationKind);
+    }
+
+    private static void ValidateChannelAndKind(
+        ulong channelId,
+        string publicationKind)
+    {
         if (channelId == 0)
         {
             throw new ArgumentOutOfRangeException(nameof(channelId));
