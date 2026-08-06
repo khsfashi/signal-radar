@@ -1,4 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using SignalRadar.Application.Articles;
 using SignalRadar.Domain.Articles;
@@ -9,17 +8,29 @@ public sealed class DiscordArticleInteractionService
 {
     private readonly IArticleRankingReader _rankingReader;
     private readonly IArticleFeedbackStore _feedbackStore;
+    private readonly IArticleSaveStore _saveStore;
+    private readonly IArticleSavedReader _savedReader;
+    private readonly SavedArticleMarkdownExporter _markdownExporter;
     private readonly TimeProvider _timeProvider;
 
     public DiscordArticleInteractionService(
         IArticleRankingReader rankingReader,
         IArticleFeedbackStore feedbackStore,
+        IArticleSaveStore saveStore,
+        IArticleSavedReader savedReader,
+        SavedArticleMarkdownExporter markdownExporter,
         TimeProvider timeProvider)
     {
         _rankingReader = rankingReader
             ?? throw new ArgumentNullException(nameof(rankingReader));
         _feedbackStore = feedbackStore
             ?? throw new ArgumentNullException(nameof(feedbackStore));
+        _saveStore = saveStore
+            ?? throw new ArgumentNullException(nameof(saveStore));
+        _savedReader = savedReader
+            ?? throw new ArgumentNullException(nameof(savedReader));
+        _markdownExporter = markdownExporter
+            ?? throw new ArgumentNullException(nameof(markdownExporter));
         _timeProvider = timeProvider
             ?? throw new ArgumentNullException(nameof(timeProvider));
     }
@@ -32,7 +43,7 @@ public sealed class DiscordArticleInteractionService
         CancellationToken cancellationToken)
     {
         ValidateUserId(userId);
-        ValidateWindow(days, limit);
+        ValidateWindow(days, limit, maximumDays: 30, maximumLimit: 5);
         DateTimeOffset since = _timeProvider.GetUtcNow().AddDays(-days);
         ArticleRankingQuery query = new(
             since,
@@ -52,7 +63,7 @@ public sealed class DiscordArticleInteractionService
         CancellationToken cancellationToken)
     {
         ValidateUserId(userId);
-        ValidateWindow(days, limit);
+        ValidateWindow(days, limit, maximumDays: 30, maximumLimit: 5);
         ArticleSearchQuery query = new(
             text,
             _timeProvider.GetUtcNow().AddDays(-days),
@@ -63,6 +74,39 @@ public sealed class DiscordArticleInteractionService
         return _rankingReader.SearchAsync(query, cancellationToken);
     }
 
+    public ValueTask<IReadOnlyList<SavedArticle>> GetSavedAsync(
+        ulong userId,
+        int days,
+        ArticleTopic topic,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        ValidateUserId(userId);
+        ValidateWindow(days, limit, maximumDays: 3650, maximumLimit: 100);
+        SavedArticleQuery query = new(
+            _timeProvider.GetUtcNow().AddDays(-days),
+            topic,
+            limit,
+            DiscordArticleInteractionCodec.CreateActorId(userId));
+        return _savedReader.GetSavedAsync(query, cancellationToken);
+    }
+
+    public async ValueTask<ArticleMarkdownExport> ExportSavedAsync(
+        ulong userId,
+        int days,
+        ArticleTopic topic,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        IReadOnlyList<SavedArticle> articles = await GetSavedAsync(
+            userId,
+            days,
+            topic,
+            limit,
+            cancellationToken).ConfigureAwait(false);
+        return _markdownExporter.Create(articles, _timeProvider.GetUtcNow());
+    }
+
     public ValueTask SetFeedbackAsync(
         ulong userId,
         Guid articleId,
@@ -70,18 +114,40 @@ public sealed class DiscordArticleInteractionService
         CancellationToken cancellationToken)
     {
         ValidateUserId(userId);
-
-        if (articleId == Guid.Empty)
-        {
-            throw new ArgumentOutOfRangeException(nameof(articleId));
-        }
-
+        ValidateArticleId(articleId);
         _ = ArticleFeedbackWeights.GetWeight(kind);
         return _feedbackStore.SetAsync(
             articleId,
             DiscordArticleInteractionCodec.CreateActorId(userId),
             kind,
             _timeProvider.GetUtcNow(),
+            cancellationToken);
+    }
+
+    public ValueTask<bool> SaveAsync(
+        ulong userId,
+        Guid articleId,
+        CancellationToken cancellationToken)
+    {
+        ValidateUserId(userId);
+        ValidateArticleId(articleId);
+        return _saveStore.TryAddAsync(
+            articleId,
+            DiscordArticleInteractionCodec.CreateActorId(userId),
+            _timeProvider.GetUtcNow(),
+            cancellationToken);
+    }
+
+    public ValueTask<bool> RemoveSavedAsync(
+        ulong userId,
+        Guid articleId,
+        CancellationToken cancellationToken)
+    {
+        ValidateUserId(userId);
+        ValidateArticleId(articleId);
+        return _saveStore.RemoveAsync(
+            articleId,
+            DiscordArticleInteractionCodec.CreateActorId(userId),
             cancellationToken);
     }
 
@@ -93,23 +159,42 @@ public sealed class DiscordArticleInteractionService
         }
     }
 
-    private static void ValidateWindow(int days, int limit)
+    private static void ValidateArticleId(Guid articleId)
     {
-        if (days is < 1 or > 30)
+        if (articleId == Guid.Empty)
+        {
+            throw new ArgumentOutOfRangeException(nameof(articleId));
+        }
+    }
+
+    private static void ValidateWindow(
+        int days,
+        int limit,
+        int maximumDays,
+        int maximumLimit)
+    {
+        if (days < 1 || days > maximumDays)
         {
             throw new ArgumentOutOfRangeException(nameof(days));
         }
 
-        if (limit is < 1 or > 5)
+        if (limit < 1 || limit > maximumLimit)
         {
             throw new ArgumentOutOfRangeException(nameof(limit));
         }
     }
 }
 
+public enum DiscordArticleSaveAction
+{
+    Add,
+    Remove
+}
+
 public static class DiscordArticleInteractionCodec
 {
-    private const string Prefix = "sr:feedback:";
+    private const string FeedbackPrefix = "sr:feedback:";
+    private const string SavePrefix = "sr:save:";
 
     public static string CreateActorId(ulong userId)
     {
@@ -127,11 +212,7 @@ public static class DiscordArticleInteractionCodec
         ArticleFeedbackKind kind,
         Guid articleId)
     {
-        if (articleId == Guid.Empty)
-        {
-            throw new ArgumentOutOfRangeException(nameof(articleId));
-        }
-
+        ValidateArticleId(articleId);
         string action = kind switch
         {
             ArticleFeedbackKind.Interested => "interested",
@@ -142,7 +223,24 @@ public static class DiscordArticleInteractionCodec
 
         return string.Create(
             CultureInfo.InvariantCulture,
-            $"{Prefix}{action}:{articleId:N}");
+            $"{FeedbackPrefix}{action}:{articleId:N}");
+    }
+
+    public static string CreateSaveCustomId(
+        DiscordArticleSaveAction action,
+        Guid articleId)
+    {
+        ValidateArticleId(articleId);
+        string actionName = action switch
+        {
+            DiscordArticleSaveAction.Add => "add",
+            DiscordArticleSaveAction.Remove => "remove",
+            _ => throw new ArgumentOutOfRangeException(nameof(action))
+        };
+
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"{SavePrefix}{actionName}:{articleId:N}");
     }
 
     public static bool TryParseFeedbackCustomId(
@@ -153,29 +251,32 @@ public static class DiscordArticleInteractionCodec
         articleId = Guid.Empty;
         kind = default;
 
-        if (string.IsNullOrWhiteSpace(customId)
-            || !customId.StartsWith(Prefix, StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        ReadOnlySpan<char> payload = customId.AsSpan(Prefix.Length);
-        int separatorIndex = payload.IndexOf(':');
-
-        if (separatorIndex <= 0 || separatorIndex == payload.Length - 1)
-        {
-            return false;
-        }
-
-        ReadOnlySpan<char> action = payload[..separatorIndex];
-        ReadOnlySpan<char> identifier = payload[(separatorIndex + 1)..];
-
-        if (!TryParseKind(action, out kind)
-            || !Guid.TryParseExact(identifier, "N", out articleId)
-            || articleId == Guid.Empty)
+        if (!TryReadPayload(customId, FeedbackPrefix, out ReadOnlySpan<char> action, out ReadOnlySpan<char> identifier)
+            || !TryParseKind(action, out kind)
+            || !TryParseArticleId(identifier, out articleId))
         {
             articleId = Guid.Empty;
             kind = default;
+            return false;
+        }
+
+        return true;
+    }
+
+    public static bool TryParseSaveCustomId(
+        string? customId,
+        out Guid articleId,
+        out DiscordArticleSaveAction action)
+    {
+        articleId = Guid.Empty;
+        action = default;
+
+        if (!TryReadPayload(customId, SavePrefix, out ReadOnlySpan<char> actionSpan, out ReadOnlySpan<char> identifier)
+            || !TryParseSaveAction(actionSpan, out action)
+            || !TryParseArticleId(identifier, out articleId))
+        {
+            articleId = Guid.Empty;
+            action = default;
             return false;
         }
 
@@ -237,6 +338,42 @@ public static class DiscordArticleInteractionCodec
         return string.Join(", ", labels);
     }
 
+    private static bool TryReadPayload(
+        string? customId,
+        string prefix,
+        out ReadOnlySpan<char> action,
+        out ReadOnlySpan<char> identifier)
+    {
+        action = default;
+        identifier = default;
+
+        if (string.IsNullOrWhiteSpace(customId)
+            || !customId.StartsWith(prefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        ReadOnlySpan<char> payload = customId.AsSpan(prefix.Length);
+        int separatorIndex = payload.IndexOf(':');
+
+        if (separatorIndex <= 0 || separatorIndex == payload.Length - 1)
+        {
+            return false;
+        }
+
+        action = payload[..separatorIndex];
+        identifier = payload[(separatorIndex + 1)..];
+        return true;
+    }
+
+    private static bool TryParseArticleId(
+        ReadOnlySpan<char> identifier,
+        out Guid articleId)
+    {
+        return Guid.TryParseExact(identifier, "N", out articleId)
+            && articleId != Guid.Empty;
+    }
+
     private static bool TryParseKind(
         ReadOnlySpan<char> action,
         out ArticleFeedbackKind kind)
@@ -263,6 +400,26 @@ public static class DiscordArticleInteractionCodec
         return false;
     }
 
+    private static bool TryParseSaveAction(
+        ReadOnlySpan<char> action,
+        out DiscordArticleSaveAction saveAction)
+    {
+        if (action.SequenceEqual("add"))
+        {
+            saveAction = DiscordArticleSaveAction.Add;
+            return true;
+        }
+
+        if (action.SequenceEqual("remove"))
+        {
+            saveAction = DiscordArticleSaveAction.Remove;
+            return true;
+        }
+
+        saveAction = default;
+        return false;
+    }
+
     private static void AddTopicLabel(
         List<string> labels,
         ArticleTopic topics,
@@ -271,6 +428,14 @@ public static class DiscordArticleInteractionCodec
         if ((topics & topic) != ArticleTopic.None)
         {
             labels.Add(GetTopicLabel(topic));
+        }
+    }
+
+    private static void ValidateArticleId(Guid articleId)
+    {
+        if (articleId == Guid.Empty)
+        {
+            throw new ArgumentOutOfRangeException(nameof(articleId));
         }
     }
 }
