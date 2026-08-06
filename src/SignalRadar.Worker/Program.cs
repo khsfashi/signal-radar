@@ -1,6 +1,17 @@
+using Npgsql;
 using SignalRadar.Application.Articles;
 using SignalRadar.Bot.Discord;
 using SignalRadar.Infrastructure.Articles;
+using SignalRadar.Infrastructure.Database;
+using SignalRadar.Infrastructure.Discord;
+
+using CancellationTokenSource shutdown = new();
+
+Console.CancelKeyPress += (_, eventArgs) =>
+{
+    eventArgs.Cancel = true;
+    shutdown.Cancel();
+};
 
 DiscordInboxOptions options = new(
     GetRequiredEnvironmentVariable("DISCORD_BOT_TOKEN"),
@@ -10,8 +21,19 @@ DiscordInboxOptions options = new(
     ParseBoolean("DISCORD_REQUIRE_AUTOMATED_AUTHOR", defaultValue: true),
     Environment.GetEnvironmentVariable("DISCORD_SOURCE_NAME") ?? "discord");
 
+string connectionString = GetRequiredEnvironmentVariable(
+    "DATABASE_CONNECTION_STRING");
+await using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(connectionString);
+
+PostgresDatabaseMigrator migrator = new(dataSource);
+await migrator.MigrateAsync(shutdown.Token);
+
+PostgresHealthCheck healthCheck = new(dataSource);
+await healthCheck.CheckAsync(shutdown.Token);
+Console.WriteLine("PostgreSQL migrations and startup health check completed.");
+
 CanonicalUrlNormalizer urlNormalizer = new();
-InMemoryArticleInbox articleInbox = new();
+PostgresArticleInbox articleInbox = new(dataSource);
 CollectArticleUseCase collectArticle = new(
     articleInbox,
     urlNormalizer,
@@ -19,7 +41,9 @@ CollectArticleUseCase collectArticle = new(
 
 DiscordMessageAccessPolicy accessPolicy = new(options);
 DiscordMessageArticleCandidateFactory candidateFactory = new();
-InMemoryDiscordMessageReceiptStore receiptStore = new();
+PostgresDiscordMessageReceiptStore receiptStore = new(
+    dataSource,
+    TimeSpan.FromMinutes(5));
 DiscordInboxProcessor processor = new(
     options,
     accessPolicy,
@@ -28,18 +52,11 @@ DiscordInboxProcessor processor = new(
     collectArticle);
 DiscordSocketMessageMapper mapper = new();
 
-using CancellationTokenSource shutdown = new();
 using DiscordInboxGateway gateway = new(
     options,
     processor,
     mapper,
     Console.WriteLine);
-
-Console.CancelKeyPress += (_, eventArgs) =>
-{
-    eventArgs.Cancel = true;
-    shutdown.Cancel();
-};
 
 await gateway.RunAsync(shutdown.Token);
 
