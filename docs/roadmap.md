@@ -12,7 +12,7 @@
 - [x] Persist Discord receipt leases.
 - [x] Add private `/top` and `/search` interactions.
 - [x] Connect interested, not-interested, and hidden buttons.
-- [ ] Add saved-item lists and Markdown export interactions.
+- [x] Add per-user saved-item lists and save/remove buttons.
 
 ## M2 — Persistent collection
 
@@ -35,9 +35,9 @@
 
 ## M4 — Summaries and exports
 
-- [ ] Export selected articles as Markdown.
+- [x] Export selected saved articles as provider-neutral Markdown.
+- [x] Keep manual export usable without an API key.
 - [ ] Add provider-neutral structured LLM summaries and caching.
-- [ ] Keep manual export usable without an API key.
 
 ## M5 — Trend radar
 
