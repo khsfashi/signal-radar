@@ -18,8 +18,8 @@
 - [x] Add RSS and Atom collectors.
 - [x] Add source health, retries, leases, and failure quarantine.
 - [x] Add canonical URL uniqueness.
-- [ ] Add GitHub Releases and Hacker News collectors.
-- [ ] Add source and external-ID identity where stable IDs exist.
+- [x] Add GitHub Releases and Hacker News collectors.
+- [x] Add source and external-ID identity where stable IDs exist.
 
 ## M3 — Ranking and feedback
 
