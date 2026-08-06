@@ -37,7 +37,11 @@
 
 - [x] Export selected saved articles as provider-neutral Markdown.
 - [x] Keep manual export usable without an API key.
-- [ ] Add provider-neutral structured LLM summaries and caching.
+- [x] Add provider-neutral structured LLM summary contracts and validation.
+- [x] Add deterministic SHA-256 summary cache identity and PostgreSQL persistence.
+- [x] Add an optional OpenAI Responses provider and Discord `/summarize` workflow.
+- [ ] Add article-body extraction with explicit robots, size, and content-type policy.
+- [ ] Add a Gemini provider adapter behind the same application interface.
 
 ## M5 — Trend radar
 
