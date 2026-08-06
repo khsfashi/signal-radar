@@ -242,18 +242,26 @@ public sealed class PostgresExternalSourceStore : IExternalSourceStore
 
     private static void AddNullableText(NpgsqlCommand command, string? value)
     {
-        NpgsqlParameter parameter = command.Parameters.Add(NpgsqlDbType.Text);
-        parameter.Value = (object?)value ?? DBNull.Value;
+        NpgsqlParameter parameter = new()
+        {
+            NpgsqlDbType = NpgsqlDbType.Text,
+            Value = (object?)value ?? DBNull.Value
+        };
+        command.Parameters.Add(parameter);
     }
 
     private static void AddNullableTimestamp(
         NpgsqlCommand command,
         DateTimeOffset? value)
     {
-        NpgsqlParameter parameter = command.Parameters.Add(NpgsqlDbType.TimestampTz);
-        parameter.Value = value.HasValue
-            ? (object)value.Value
-            : DBNull.Value;
+        NpgsqlParameter parameter = new()
+        {
+            NpgsqlDbType = NpgsqlDbType.TimestampTz,
+            Value = value.HasValue
+                ? (object)value.Value
+                : DBNull.Value
+        };
+        command.Parameters.Add(parameter);
     }
 
     private static async ValueTask EnsureSingleUpdateAsync(
