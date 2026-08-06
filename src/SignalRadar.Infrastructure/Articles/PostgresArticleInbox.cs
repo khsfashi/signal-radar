@@ -38,8 +38,12 @@ public sealed class PostgresArticleInbox : IArticleInbox
         command.Parameters.AddWithValue(article.CanonicalUrl.AbsoluteUri);
         command.Parameters.AddWithValue(article.Title);
         command.Parameters.AddWithValue(article.Source);
-        NpgsqlParameter externalId = command.Parameters.Add(NpgsqlDbType.Text);
-        externalId.Value = (object?)article.ExternalId ?? DBNull.Value;
+        NpgsqlParameter externalId = new()
+        {
+            NpgsqlDbType = NpgsqlDbType.Text,
+            Value = (object?)article.ExternalId ?? DBNull.Value
+        };
+        command.Parameters.Add(externalId);
         command.Parameters.AddWithValue(article.PublishedAt);
         command.Parameters.AddWithValue(article.CollectedAt);
 
