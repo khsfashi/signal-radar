@@ -4,7 +4,10 @@ using SignalRadar.Domain.Articles;
 
 namespace SignalRadar.Application.Articles;
 
-public sealed record ArticleMarkdownExport(string FileName, string Content);
+public sealed record ArticleMarkdownExport(
+    string FileName,
+    string Content,
+    int ArticleCount);
 
 public sealed class SavedArticleMarkdownExporter
 {
@@ -78,7 +81,10 @@ public sealed class SavedArticleMarkdownExporter
         string fileName = string.Create(
             CultureInfo.InvariantCulture,
             $"signal-radar-saved-{generatedUtc:yyyyMMdd-HHmmss}Z.md");
-        return new ArticleMarkdownExport(fileName, builder.ToString());
+        return new ArticleMarkdownExport(
+            fileName,
+            builder.ToString(),
+            articles.Count);
     }
 
     private static string EscapeLinkText(string value)
