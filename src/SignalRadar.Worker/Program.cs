@@ -1,18 +1,48 @@
 using System.Net;
 using Npgsql;
 using SignalRadar.Application.Articles;
+using SignalRadar.Application.Digests;
 using SignalRadar.Application.ExternalSources;
 using SignalRadar.Application.Feeds;
 using SignalRadar.Bot.Discord;
 using SignalRadar.Infrastructure.Articles;
 using SignalRadar.Infrastructure.Database;
+using SignalRadar.Infrastructure.Digests;
 using SignalRadar.Infrastructure.Discord;
 using SignalRadar.Infrastructure.ExternalSources;
 using SignalRadar.Infrastructure.Feeds;
+using SignalRadar.Infrastructure.Operations;
 using SignalRadar.Infrastructure.Ranking;
+using SignalRadar.Worker.Digests;
 using SignalRadar.Worker.ExternalSources;
 using SignalRadar.Worker.Feeds;
+using SignalRadar.Worker.Operations;
 using SignalRadar.Worker.Summaries;
+
+DateTimeOffset startedAt = DateTimeOffset.UtcNow;
+bool discordEnabled = ParseBoolean("DISCORD_ENABLED", defaultValue: true);
+string connectionString = GetRequiredEnvironmentVariable(
+    "DATABASE_CONNECTION_STRING");
+StartupSecurityValidator.Validate(discordEnabled, connectionString);
+RedactingConsoleLogger logger = new(
+[
+    connectionString,
+    Environment.GetEnvironmentVariable("DISCORD_BOT_TOKEN"),
+    Environment.GetEnvironmentVariable("OPENAI_API_KEY"),
+    Environment.GetEnvironmentVariable("GEMINI_API_KEY"),
+    Environment.GetEnvironmentVariable("GITHUB_API_TOKEN")
+]);
+Action<string> log = logger.WriteLine;
+
+if (args.Contains("--healthcheck", StringComparer.Ordinal))
+{
+    await using NpgsqlDataSource healthDataSource = NpgsqlDataSource.Create(
+        connectionString);
+    PostgresHealthCheck containerHealthCheck = new(healthDataSource);
+    await containerHealthCheck.CheckAsync(CancellationToken.None);
+    log("Health check succeeded.");
+    return;
+}
 
 using CancellationTokenSource shutdown = new();
 using CancellationTokenSource lifetime =
@@ -24,7 +54,6 @@ Console.CancelKeyPress += (_, eventArgs) =>
     shutdown.Cancel();
 };
 
-bool discordEnabled = ParseBoolean("DISCORD_ENABLED", defaultValue: true);
 string? feedConfigurationPath = Environment.GetEnvironmentVariable(
     "FEED_SOURCE_CONFIG_PATH");
 bool feedsEnabled = !string.IsNullOrWhiteSpace(feedConfigurationPath);
@@ -43,9 +72,18 @@ if (!discordEnabled && !feedsEnabled && !externalSourcesEnabled)
         "At least one ingestion pipeline must be enabled.");
 }
 
+ulong[] allowedGuildIds = discordEnabled
+    ? ParseSnowflakes("DISCORD_ALLOWED_GUILD_IDS", required: true)
+    : [];
+ulong[] allowedChannelIds = discordEnabled
+    ? ParseSnowflakes("DISCORD_ALLOWED_CHANNEL_IDS", required: true)
+    : [];
+DiscordDigestScheduleOptions? digestSchedule =
+    DiscordDigestScheduleConfiguration.Load(
+        discordEnabled,
+        allowedChannelIds);
+
 TimeProvider timeProvider = TimeProvider.System;
-string connectionString = GetRequiredEnvironmentVariable(
-    "DATABASE_CONNECTION_STRING");
 await using NpgsqlDataSource dataSource = NpgsqlDataSource.Create(connectionString);
 
 PostgresDatabaseMigrator migrator = new(dataSource);
@@ -53,15 +91,14 @@ await migrator.MigrateAsync(lifetime.Token);
 
 PostgresHealthCheck healthCheck = new(dataSource);
 await healthCheck.CheckAsync(lifetime.Token);
-Console.WriteLine("PostgreSQL migrations and startup health check completed.");
+log("PostgreSQL migrations and startup health check completed.");
 
 ArticleRankingProfileLoader rankingProfileLoader = new();
 ArticleRankingProfile rankingProfile = await rankingProfileLoader.LoadAsync(
     Environment.GetEnvironmentVariable("RANKING_PROFILE_PATH"),
     lifetime.Token);
 RuleBasedArticleAssessmentPolicy assessmentPolicy = new(rankingProfile);
-Console.WriteLine(
-    $"Loaded article ranking profile '{rankingProfile.Version}'.");
+log($"Loaded article ranking profile '{rankingProfile.Version}'.");
 
 CanonicalUrlNormalizer urlNormalizer = new();
 PostgresArticleInbox articleInbox = new(dataSource);
@@ -76,8 +113,7 @@ using SummaryRuntime summaryRuntime = SummaryRuntime.Create(
 
 if (summaryRuntime.Enabled)
 {
-    Console.WriteLine(
-        $"Enabled article summaries with {summaryRuntime.Description}.");
+    log($"Enabled article summaries with {summaryRuntime.Description}.");
 }
 
 List<Task> runningTasks = [];
@@ -167,11 +203,10 @@ try
                 defaultValue: 30,
                 minimum: 1,
                 maximum: 300)),
-            Console.WriteLine);
+            log);
 
         runningTasks.Add(pollingLoop.RunAsync(lifetime.Token));
-        Console.WriteLine(
-            $"Loaded {definitions.Count} RSS/Atom source definitions.");
+        log($"Loaded {definitions.Count} RSS/Atom source definitions.");
     }
 
     if (externalSourcesEnabled)
@@ -280,19 +315,18 @@ try
                 defaultValue: 30,
                 minimum: 1,
                 maximum: 300)),
-            Console.WriteLine);
+            log);
 
         runningTasks.Add(pollingLoop.RunAsync(lifetime.Token));
-        Console.WriteLine(
-            $"Loaded {definitions.Count} external API source definitions.");
+        log($"Loaded {definitions.Count} external API source definitions.");
     }
 
     if (discordEnabled)
     {
         DiscordInboxOptions discordOptions = new(
             GetRequiredEnvironmentVariable("DISCORD_BOT_TOKEN"),
-            ParseSnowflakes("DISCORD_ALLOWED_GUILD_IDS", required: true),
-            ParseSnowflakes("DISCORD_ALLOWED_CHANNEL_IDS", required: true),
+            allowedGuildIds,
+            allowedChannelIds,
             ParseSnowflakes("DISCORD_ALLOWED_AUTHOR_IDS", required: false),
             ParseBoolean(
                 "DISCORD_REQUIRE_AUTOMATED_AUTHOR",
@@ -315,6 +349,16 @@ try
         PostgresArticleFeedbackStore feedbackStore = new(dataSource);
         PostgresArticleSaveStore saveStore = new(dataSource);
         SavedArticleMarkdownExporter markdownExporter = new();
+        GenerateArticleDigestUseCase digestUseCase = new(
+            rankingReader,
+            timeProvider);
+        PostgresSignalRadarStatusReader statusReader = new(
+            dataSource,
+            timeProvider,
+            startedAt,
+            rankingProfile.Version,
+            summaryRuntime.Description,
+            digestSchedule is not null);
         DiscordArticleInteractionService interactionService = new(
             rankingReader,
             feedbackStore,
@@ -326,15 +370,33 @@ try
         DiscordArticleInteractionHandler interactionHandler = new(
             discordOptions,
             interactionService,
-            Console.WriteLine);
+            log,
+            digestUseCase,
+            statusReader);
 
         discordGateway = new DiscordInboxGateway(
             discordOptions,
             processor,
             mapper,
-            Console.WriteLine,
+            log,
             interactionHandler);
         runningTasks.Add(discordGateway.RunAsync(lifetime.Token));
+
+        if (digestSchedule is not null)
+        {
+            PostgresDigestDeliveryReceiptStore digestReceiptStore = new(dataSource);
+            DiscordDigestScheduler scheduler = new(
+                digestSchedule,
+                digestUseCase,
+                digestReceiptStore,
+                discordGateway,
+                timeProvider,
+                log);
+            runningTasks.Add(scheduler.RunAsync(lifetime.Token));
+            log(
+                $"Scheduled digest enabled for channel {digestSchedule.ChannelId} "
+                    + $"in {digestSchedule.TimeZone.Id}.");
+        }
     }
 
     if (runningTasks.Count == 0)
