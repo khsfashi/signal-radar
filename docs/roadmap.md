@@ -10,19 +10,22 @@
 
 ## M1 — Discord inbox
 
-- [ ] Add Discord.Net through an adapter isolated in `SignalRadar.Bot`.
-- [ ] Restrict processing to configured guild and channel identifiers.
-- [ ] Parse GeekNews bot messages and embeds.
-- [ ] Persist Discord message identifiers for idempotency.
+- [x] Add Discord.Net through an adapter isolated in `SignalRadar.Bot`.
+- [x] Restrict processing to configured guild and channel identifiers.
+- [x] Parse GeekNews bot messages and embeds.
+- [x] Persist Discord message identifiers for idempotency.
 - [ ] Add save, dismiss, and export interactions.
 
 ## M2 — Persistent collection
 
-- [ ] Add PostgreSQL schema and migrations.
+- [x] Add PostgreSQL schema and transactional embedded migrations.
+- [x] Add PostgreSQL article and leased Discord receipt stores.
+- [x] Add startup database health validation.
+- [x] Add PostgreSQL integration tests in GitHub Actions.
 - [ ] Add RSS and Atom collectors.
 - [ ] Add GitHub Releases and Hacker News collectors.
 - [ ] Add retry policy, source health, and failure quarantine.
-- [ ] Add canonical URL and source/external-ID unique constraints.
+- [ ] Add source and external-ID unique constraints.
 
 ## M3 — Ranking and feedback
 
