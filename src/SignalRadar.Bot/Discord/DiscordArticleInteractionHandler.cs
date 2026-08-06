@@ -3,6 +3,7 @@ using System.Text;
 using Discord;
 using Discord.WebSocket;
 using SignalRadar.Application.Articles;
+using SignalRadar.Application.Summaries;
 using SignalRadar.Domain.Articles;
 
 namespace SignalRadar.Bot.Discord;
@@ -13,8 +14,10 @@ public sealed class DiscordArticleInteractionHandler
     private const int DefaultSearchDays = 30;
     private const int DefaultSavedDays = 365;
     private const int DefaultExportDays = 365;
+    private const int DefaultSummaryDays = 30;
     private const int DefaultDisplayLimit = 5;
     private const int DefaultExportLimit = 100;
+    private const int DefaultSummaryLimit = 10;
     private readonly DiscordInboxOptions _options;
     private readonly DiscordArticleInteractionService _service;
     private readonly Action<string> _log;
@@ -43,13 +46,20 @@ public sealed class DiscordArticleInteractionHandler
                 return;
             }
 
-            ApplicationCommandProperties[] commands =
+            List<ApplicationCommandProperties> commands =
             [
                 BuildTopCommand(),
                 BuildSearchCommand(),
                 BuildSavedCommand(),
                 BuildExportCommand()
             ];
+
+            if (_service.SummaryEnabled)
+            {
+                commands.Add(BuildSummarizeCommand());
+            }
+
+            ApplicationCommandProperties[] commandArray = [.. commands];
 
             foreach (ulong guildId in _options.AllowedGuildIds)
             {
@@ -62,7 +72,7 @@ public sealed class DiscordArticleInteractionHandler
                 }
 
                 await guild
-                    .BulkOverwriteApplicationCommandAsync(commands)
+                    .BulkOverwriteApplicationCommandAsync(commandArray)
                     .ConfigureAwait(false);
                 _log($"Discord commands synchronized for guild {guildId}.");
             }
@@ -103,6 +113,9 @@ public sealed class DiscordArticleInteractionHandler
                 case "export":
                     await HandleExportAsync(command).ConfigureAwait(false);
                     break;
+                case "summarize":
+                    await HandleSummarizeAsync(command).ConfigureAwait(false);
+                    break;
                 default:
                     await command.RespondAsync(
                         "지원하지 않는 Signal Radar 명령입니다.",
@@ -113,13 +126,7 @@ public sealed class DiscordArticleInteractionHandler
         catch (Exception exception)
         {
             _log($"Discord slash command {command.Data.Name} failed: {exception}");
-
-            if (!command.HasResponded)
-            {
-                await command.RespondAsync(
-                    "명령을 처리하지 못했습니다. 입력값과 Worker 로그를 확인해주세요.",
-                    ephemeral: true).ConfigureAwait(false);
-            }
+            await RespondCommandFailureAsync(command).ConfigureAwait(false);
         }
     }
 
@@ -325,6 +332,45 @@ public sealed class DiscordArticleInteractionHandler
             allowedMentions: AllowedMentions.None).ConfigureAwait(false);
     }
 
+    private async Task HandleSummarizeAsync(SocketSlashCommand command)
+    {
+        if (!_service.SummaryEnabled)
+        {
+            await command.RespondAsync(
+                "요약 Provider가 설정되지 않았습니다.",
+                ephemeral: true).ConfigureAwait(false);
+            return;
+        }
+
+        int days = GetIntegerOption(command, "days", DefaultSummaryDays);
+        int limit = GetIntegerOption(command, "limit", DefaultSummaryLimit);
+        ArticleTopic topic = DiscordArticleInteractionCodec.ParseTopic(
+            GetStringOption(command, "topic"));
+        string language = GetStringOption(command, "language") ?? "ko";
+        await command.DeferAsync(ephemeral: true).ConfigureAwait(false);
+        GeneratedArticleSummary? result = await _service.SummarizeSavedAsync(
+            command.User.Id,
+            days,
+            topic,
+            limit,
+            language,
+            CancellationToken.None).ConfigureAwait(false);
+
+        if (result is null)
+        {
+            await command.FollowupAsync(
+                "요약할 저장 기사가 없습니다.",
+                ephemeral: true).ConfigureAwait(false);
+            return;
+        }
+
+        await command.FollowupAsync(
+            text: $"저장 기사 {result.Summary.ArticleCount}건의 구조화 요약입니다.",
+            embed: BuildSummaryEmbed(result),
+            ephemeral: true,
+            allowedMentions: AllowedMentions.None).ConfigureAwait(false);
+    }
+
     private static async Task RespondWithRankedArticlesAsync(
         SocketSlashCommand command,
         IReadOnlyList<RankedArticle> articles,
@@ -438,6 +484,54 @@ public sealed class DiscordArticleInteractionHandler
                 + DiscordArticleInteractionCodec.GetTopicLabel(article.PrimaryTopic))
             .WithTimestamp(article.PublishedAt)
             .Build();
+    }
+
+    private static Embed BuildSummaryEmbed(GeneratedArticleSummary result)
+    {
+        ArticleSummaryCacheEntry summary = result.Summary;
+        ArticleSummaryContent content = summary.Content;
+        EmbedBuilder builder = new EmbedBuilder()
+            .WithTitle(Truncate(content.Title, EmbedBuilder.MaxTitleLength))
+            .WithDescription(Truncate(content.Overview, EmbedBuilder.MaxDescriptionLength))
+            .AddField("핵심 신호", FormatList(content.KeyPoints), inline: false)
+            .AddField(
+                "왜 중요한가",
+                Truncate(content.WhyItMatters, EmbedFieldBuilder.MaxFieldValueLength),
+                inline: false)
+            .WithFooter(
+                $"{summary.Provider} / {summary.Model} · "
+                    + (result.CacheHit ? "cache hit" : "generated")
+                    + " · 저장 기사 메타데이터만 사용")
+            .WithTimestamp(summary.GeneratedAt);
+
+        if (content.WatchNext.Count > 0)
+        {
+            builder.AddField("다음 확인점", FormatList(content.WatchNext), inline: false);
+        }
+
+        if (content.Caveats.Count > 0)
+        {
+            builder.AddField("주의·불확실성", FormatList(content.Caveats), inline: false);
+        }
+
+        return builder.Build();
+    }
+
+    private static string FormatList(IReadOnlyList<string> values)
+    {
+        StringBuilder builder = new();
+
+        for (int index = 0; index < values.Count; index++)
+        {
+            if (index > 0)
+            {
+                builder.AppendLine();
+            }
+
+            builder.Append("• ").Append(values[index]);
+        }
+
+        return Truncate(builder.ToString(), EmbedFieldBuilder.MaxFieldValueLength);
     }
 
     private static void AddArticleButtons(
@@ -578,6 +672,33 @@ public sealed class DiscordArticleInteractionHandler
         return builder.Build();
     }
 
+    private static SlashCommandProperties BuildSummarizeCommand()
+    {
+        SlashCommandBuilder builder = new SlashCommandBuilder()
+            .WithName("summarize")
+            .WithDescription("내 저장 기사 메타데이터를 구조화된 AI 브리핑으로 요약합니다.");
+        builder.AddOption(
+            "days",
+            ApplicationCommandOptionType.Integer,
+            "저장 기간(1~3650일, 기본 30일)",
+            minValue: 1,
+            maxValue: 3650);
+        AddTopicOption(builder);
+        builder.AddOption(
+            "limit",
+            ApplicationCommandOptionType.Integer,
+            "요약할 기사 수(1~20, 기본 10개)",
+            minValue: 1,
+            maxValue: 20);
+        builder.AddOption(
+            "language",
+            ApplicationCommandOptionType.String,
+            "요약 언어: ko 또는 en(기본 ko)",
+            minLength: 2,
+            maxLength: 2);
+        return builder.Build();
+    }
+
     private static void AddTopicOption(SlashCommandBuilder builder)
     {
         builder.AddOption(
@@ -631,6 +752,25 @@ public sealed class DiscordArticleInteractionHandler
             ? value
             : throw new InvalidOperationException(
                 $"Required Discord option '{name}' is missing.");
+    }
+
+    private static async Task RespondCommandFailureAsync(
+        SocketSlashCommand command)
+    {
+        const string message =
+            "명령을 처리하지 못했습니다. 입력값과 Worker 로그를 확인해주세요.";
+
+        if (command.HasResponded)
+        {
+            await command.FollowupAsync(
+                message,
+                ephemeral: true).ConfigureAwait(false);
+            return;
+        }
+
+        await command.RespondAsync(
+            message,
+            ephemeral: true).ConfigureAwait(false);
     }
 
     private static string GetFeedbackConfirmation(ArticleFeedbackKind kind)
