@@ -14,7 +14,8 @@ Signal Radar is a personal technology-intelligence pipeline for collecting, norm
 - Classifies articles into multiple deterministic topics.
 - Scores source trust, personal topic interest, practical impact, and freshness.
 - Persists every score component and the ranking-profile version.
-- Stores explicit per-actor feedback and queries feedback-adjusted rankings.
+- Exposes private Discord `/top` and `/search` ranked queries.
+- Stores interested, not-interested, and per-user hidden feedback from Discord buttons.
 - Preserves idempotency across restarts with database constraints and expiring leases.
 - Tracks source success, failure, retry, and quarantine state.
 - Runs PostgreSQL migrations with checksum validation and an advisory lock.
@@ -57,7 +58,11 @@ dotnet run --project src/SignalRadar.Worker
 
 ## Discord
 
-When `DISCORD_ENABLED=true`, configure the bot token and allow-listed guild, channel, and optional author identifiers. Enable **Message Content Intent** in the Discord Developer Portal.
+When `DISCORD_ENABLED=true`, configure the bot token and allow-listed guild, channel, and optional ingestion-author identifiers. Enable **Message Content Intent** for article ingestion, and install the application with the `bot` and `applications.commands` scopes.
+
+The gateway synchronizes guild-scoped `/top` and `/search` commands. Results are ephemeral and include article-specific `관심`, `별로`, and `숨김` buttons. Hidden articles are excluded from later results for the same Discord user.
+
+See [Discord interactions](docs/discord-interactions.md) for command options, topic slugs, feedback behavior, and command synchronization.
 
 ## RSS and Atom
 
@@ -94,6 +99,7 @@ See [Ranking and feedback](docs/ranking.md) for the formula, profile format, per
 - Stable external items are unique by `(source, external_id)` even when their URLs change.
 - Ranking components and the profile version used at collection time are preserved.
 - Explicit feedback is unique per article and actor.
+- A user's hidden articles are excluded from their later Discord ranked queries.
 - Discord messages, feeds, and external API sources use expiring tokenized leases.
 - Five consecutive polling failures quarantine a source for six hours.
 - Applied SQL migration checksums are verified on every startup.
@@ -101,6 +107,7 @@ See [Ranking and feedback](docs/ranking.md) for the formula, profile format, per
 ## Documentation
 
 - [Architecture](docs/architecture.md)
+- [Discord interactions](docs/discord-interactions.md)
 - [Feed sources](docs/feed-sources.md)
 - [External sources](docs/external-sources.md)
 - [Ranking and feedback](docs/ranking.md)
