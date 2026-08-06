@@ -78,7 +78,7 @@ public sealed class PostgresPersistenceTests
     private static async Task ResetTablesAsync(NpgsqlDataSource dataSource)
     {
         await using NpgsqlCommand command = dataSource.CreateCommand(
-            "TRUNCATE TABLE discord_message_receipts, articles;");
+            "TRUNCATE TABLE article_feedback, discord_message_receipts, articles;");
         await command.ExecuteNonQueryAsync(CancellationToken.None);
     }
 }
