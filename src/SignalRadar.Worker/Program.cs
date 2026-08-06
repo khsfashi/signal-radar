@@ -9,6 +9,7 @@ using SignalRadar.Infrastructure.Database;
 using SignalRadar.Infrastructure.Discord;
 using SignalRadar.Infrastructure.ExternalSources;
 using SignalRadar.Infrastructure.Feeds;
+using SignalRadar.Infrastructure.Ranking;
 using SignalRadar.Worker.ExternalSources;
 using SignalRadar.Worker.Feeds;
 
@@ -53,11 +54,20 @@ PostgresHealthCheck healthCheck = new(dataSource);
 await healthCheck.CheckAsync(lifetime.Token);
 Console.WriteLine("PostgreSQL migrations and startup health check completed.");
 
+ArticleRankingProfileLoader rankingProfileLoader = new();
+ArticleRankingProfile rankingProfile = await rankingProfileLoader.LoadAsync(
+    Environment.GetEnvironmentVariable("RANKING_PROFILE_PATH"),
+    lifetime.Token);
+RuleBasedArticleAssessmentPolicy assessmentPolicy = new(rankingProfile);
+Console.WriteLine(
+    $"Loaded article ranking profile '{rankingProfile.Version}'.");
+
 CanonicalUrlNormalizer urlNormalizer = new();
 PostgresArticleInbox articleInbox = new(dataSource);
 CollectArticleUseCase collectArticle = new(
     articleInbox,
     urlNormalizer,
+    assessmentPolicy,
     timeProvider);
 List<Task> runningTasks = [];
 DiscordInboxGateway? discordGateway = null;
