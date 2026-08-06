@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using Discord;
 using Discord.WebSocket;
+using SignalRadar.Application.Digests;
 
 namespace SignalRadar.Bot.Discord;
 
@@ -51,6 +52,8 @@ public sealed class DiscordInboxGateway : IDisposable
     private readonly DiscordArticleInteractionHandler? _interactionHandler;
     private readonly DiscordSocketClient _client;
     private readonly Action<string> _log;
+    private readonly TaskCompletionSource<bool> _ready = new(
+        TaskCreationOptions.RunContinuationsAsynchronously);
     private bool _disposed;
 
     public DiscordInboxGateway(
@@ -75,11 +78,11 @@ public sealed class DiscordInboxGateway : IDisposable
         });
 
         _client.Log += HandleLogAsync;
+        _client.Ready += HandleReadyAsync;
         _client.MessageReceived += HandleMessageAsync;
 
         if (_interactionHandler is not null)
         {
-            _client.Ready += HandleReadyAsync;
             _client.SlashCommandExecuted += HandleSlashCommandAsync;
             _client.ButtonExecuted += HandleButtonAsync;
         }
@@ -112,6 +115,35 @@ public sealed class DiscordInboxGateway : IDisposable
         }
     }
 
+    public async ValueTask<ulong> SendDigestAsync(
+        ulong channelId,
+        ArticleDigest digest,
+        CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(digest);
+
+        if (!_options.AllowedChannelIds.Contains(channelId))
+        {
+            throw new InvalidOperationException(
+                "Scheduled digest channel is not in DISCORD_ALLOWED_CHANNEL_IDS.");
+        }
+
+        await _ready.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        IMessageChannel channel = _client.GetChannel(channelId) as IMessageChannel
+            ?? throw new InvalidOperationException(
+                $"Discord channel {channelId} is unavailable or cannot receive messages.");
+        IUserMessage message = await channel.SendMessageAsync(
+            text: DiscordDigestMessageFactory.GetHeading(digest),
+            embed: DiscordDigestMessageFactory.BuildEmbed(digest),
+            allowedMentions: AllowedMentions.None,
+            options: new RequestOptions
+            {
+                CancelToken = cancellationToken
+            }).ConfigureAwait(false);
+        return message.Id;
+    }
+
     public void Dispose()
     {
         if (_disposed)
@@ -123,10 +155,10 @@ public sealed class DiscordInboxGateway : IDisposable
         {
             _client.ButtonExecuted -= HandleButtonAsync;
             _client.SlashCommandExecuted -= HandleSlashCommandAsync;
-            _client.Ready -= HandleReadyAsync;
         }
 
         _client.MessageReceived -= HandleMessageAsync;
+        _client.Ready -= HandleReadyAsync;
         _client.Log -= HandleLogAsync;
         _client.Dispose();
         _disposed = true;
@@ -153,10 +185,15 @@ public sealed class DiscordInboxGateway : IDisposable
         }
     }
 
-    private Task HandleReadyAsync()
+    private async Task HandleReadyAsync()
     {
-        return _interactionHandler?.RegisterCommandsAsync(_client)
-            ?? Task.CompletedTask;
+        _ready.TrySetResult(true);
+
+        if (_interactionHandler is not null)
+        {
+            await _interactionHandler.RegisterCommandsAsync(_client)
+                .ConfigureAwait(false);
+        }
     }
 
     private Task HandleSlashCommandAsync(SocketSlashCommand command)
