@@ -18,12 +18,14 @@ Signal Radar is a personal technology-intelligence pipeline for collecting, norm
 - Stores interested, not-interested, and per-user hidden feedback from Discord buttons.
 - Stores an independent per-user article reading list.
 - Exports up to 100 saved source links as provider-neutral UTF-8 Markdown.
+- Optionally registers `/summarize` for on-demand structured saved-article briefings.
+- Caches structured summaries by deterministic SHA-256 input identity.
 - Preserves idempotency across restarts with database constraints and expiring leases.
 - Tracks source success, failure, retry, and quarantine state.
 - Runs PostgreSQL migrations with checksum validation and an advisory lock.
 - Builds and runs unit plus PostgreSQL integration tests in GitHub Actions.
 
-LLM calls are intentionally not part of ingestion. Deterministic collection, filtering, deduplication, classification, and base scoring happen first.
+LLM calls are intentionally not part of ingestion. Deterministic collection, filtering, deduplication, classification, and base scoring happen first. Summary generation is optional and happens only after an explicit user command.
 
 ## Quick start
 
@@ -47,6 +49,7 @@ DISCORD_ENABLED=true
 FEED_SOURCE_CONFIG_PATH=config/feed-sources.json
 GITHUB_RELEASE_SOURCE_CONFIG_PATH=config/github-repositories.json
 HACKER_NEWS_ENABLED=true
+SUMMARY_PROVIDER=disabled
 ```
 
 Enable at least one ingestion pipeline, then run:
@@ -66,7 +69,24 @@ The gateway synchronizes guild-scoped `/top`, `/search`, `/saved`, and `/export`
 
 `/export` creates a bounded Markdown attachment containing the user's saved source links, timestamps, topics, and current scores. The export is usable manually with any analysis tool and does not require an LLM API key.
 
+When `SUMMARY_PROVIDER=openai-responses` and the required OpenAI settings are present, the synchronized command set also includes `/summarize`. It summarizes one to twenty saved article signals in Korean or English and returns an ephemeral structured briefing. The current prompt receives saved metadata only and explicitly does not claim to have read the linked article bodies.
+
 See [Discord interactions](docs/discord-interactions.md) for command options, topic slugs, feedback behavior, saved-list behavior, and command synchronization.
+
+## Optional structured summaries
+
+The first provider implementation calls the OpenAI Responses endpoint through a provider-neutral application interface. It requests strict JSON Schema output and validates all fields again before caching or displaying them.
+
+```text
+SUMMARY_PROVIDER=openai-responses
+OPENAI_API_KEY=replace-me
+OPENAI_SUMMARY_MODEL=your-model-id
+OPENAI_RESPONSES_ENDPOINT=https://api.openai.com/v1/responses
+```
+
+The cache key includes provider, model, prompt version, language, and ordered article metadata. Repeating the same request returns the PostgreSQL-cached result without another provider call. API keys and Discord user identifiers are not stored in the summary cache.
+
+See [Structured summaries](docs/summaries.md) for the schema, cache identity, limits, security behavior, and current metadata-only limitation.
 
 ## RSS and Atom
 
@@ -105,6 +125,7 @@ See [Ranking and feedback](docs/ranking.md) for the formula, profile format, per
 - Explicit feedback is unique per article and actor.
 - Saved articles are unique per article and actor and remain separate from feedback.
 - A user's hidden articles are excluded from their later Discord ranked queries.
+- Structured summaries are immutable for a deterministic input hash.
 - Discord messages, feeds, and external API sources use expiring tokenized leases.
 - Five consecutive polling failures quarantine a source for six hours.
 - Applied SQL migration checksums are verified on every startup.
@@ -113,6 +134,7 @@ See [Ranking and feedback](docs/ranking.md) for the formula, profile format, per
 
 - [Architecture](docs/architecture.md)
 - [Discord interactions](docs/discord-interactions.md)
+- [Structured summaries](docs/summaries.md)
 - [Feed sources](docs/feed-sources.md)
 - [External sources](docs/external-sources.md)
 - [Ranking and feedback](docs/ranking.md)
