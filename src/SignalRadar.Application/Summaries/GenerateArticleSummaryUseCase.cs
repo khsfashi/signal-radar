@@ -135,11 +135,14 @@ public sealed class GenerateArticleSummaryUseCase
         IReadOnlyList<SavedArticle> articles,
         CancellationToken cancellationToken)
     {
-        if (_contentReader is null)
+        IArticleContentReader? configuredReader = _contentReader;
+
+        if (configuredReader is null)
         {
             return null;
         }
 
+        IArticleContentReader contentReader = configuredReader;
         ArticleContentSnapshot[] snapshots = new ArticleContentSnapshot[articles.Count];
         using SemaphoreSlim gate = new(_maximumContentConcurrency);
         Task[] tasks = new Task[articles.Count];
@@ -159,7 +162,7 @@ public sealed class GenerateArticleSummaryUseCase
 
             try
             {
-                snapshots[index] = await _contentReader.GetAsync(
+                snapshots[index] = await contentReader.GetAsync(
                     articles[index],
                     cancellationToken).ConfigureAwait(false);
             }
