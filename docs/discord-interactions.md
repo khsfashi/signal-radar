@@ -1,16 +1,14 @@
 # Discord interactions
 
-Signal Radar registers guild-scoped application commands for every configured `DISCORD_ALLOWED_GUILD_IDS` entry when the gateway becomes ready. Commands and buttons are accepted only when both the guild and channel are present in the configured allow lists.
+Signal Radar registers guild-scoped application commands for every configured `DISCORD_ALLOWED_GUILD_IDS` entry when the Gateway becomes ready. Commands and buttons are accepted only when both guild and channel appear in the configured allow lists.
 
-The Discord application must be installed with the `bot` and `applications.commands` scopes. Article ingestion additionally requires **Message Content Intent** because GeekNews-style messages and embeds are parsed by the gateway.
+The Discord application must be installed with the `bot` and `applications.commands` scopes. Article-message ingestion additionally requires **Message Content Intent**.
 
 ## Commands
 
 ### `/top`
 
-Returns the highest effective-score articles in a private response.
-
-Options:
+Returns the highest effective-score recent articles in an ephemeral response.
 
 - `days`: 1 to 30, default 3.
 - `topic`: optional topic slug.
@@ -18,9 +16,7 @@ Options:
 
 ### `/search`
 
-Searches stored article titles and source names and returns a private ranked response.
-
-Options:
+Searches stored article titles and source names.
 
 - `query`: required, 2 to 100 characters.
 - `days`: 1 to 30, default 30.
@@ -29,40 +25,44 @@ Options:
 
 ### `/saved`
 
-Returns the invoking user's saved articles in reverse save order. Saved articles are independent from ranking feedback, so marking an article as interesting does not automatically place it in the saved list.
+Returns the invoking user's saved articles in reverse save order.
 
-Options:
-
-- `days`: saved within 1 to 3650 days, default 365.
+- `days`: 1 to 3650, default 365.
 - `topic`: optional topic slug.
 - `limit`: 1 to 5, default 5.
 
 ### `/export`
 
-Exports the invoking user's saved articles as a UTF-8 Markdown file in a private response. The file contains source links, publication and save times, deterministic topics, and current effective scores. It is provider-neutral and can be supplied manually to another analysis tool without configuring an LLM API key in Signal Radar.
+Exports the invoking user's saved articles as an ephemeral UTF-8 Markdown attachment.
 
-Options:
-
-- `days`: saved within 1 to 3650 days, default 365.
+- `days`: 1 to 3650, default 365.
 - `topic`: optional topic slug.
 - `limit`: 1 to 100, default 100.
 
 ### `/summarize`
 
-This command is registered only when an article-summary provider is configured. It creates a private structured briefing from the invoking user's saved articles.
+Registered only when OpenAI Responses or Gemini Generate Content is configured. It defers the interaction, performs bounded robots-aware article retrieval, and returns one structured ephemeral briefing.
 
-Options:
-
-- `days`: saved within 1 to 3650 days, default 30.
+- `days`: 1 to 3650, default 30.
 - `topic`: optional topic slug.
 - `limit`: 1 to 20, default 10.
 - `language`: `ko` or `en`, default `ko`.
 
-The command defers its initial interaction because article retrieval and a provider request can take longer than Discord's immediate-response window. It then sends an ephemeral follow-up embed containing an overview, key signals, why they may matter, next checks, and caveats.
+Unavailable, blocked, non-HTML, oversized, or too-short pages fall back to metadata without failing the complete briefing. The Footer identifies provider, model, cache state, and whether the content-aware prompt was used.
 
-For each selected article, Signal Radar attempts a bounded robots-aware HTML retrieval and extraction. Successfully cleaned text excerpts are supplied with the stored metadata. Robots-disallowed, unavailable, non-HTML, too-large, or too-short pages fall back to metadata and an extraction-status note without failing the entire briefing.
+### `/digest`
 
-The result Footer says `본문 추출 포함` for the content-aware prompt version and `저장 기사 메타데이터만 사용` for legacy metadata-only cached results. Identical provider, model, prompt version, language, exact instructions, ordered metadata, extraction status, content hash, and bounded excerpt uses the PostgreSQL-cached result.
+Returns a deterministic ranked digest without invoking an LLM.
+
+- `period`: `daily` or `weekly`, default `daily`.
+- `topic`: optional topic slug.
+- `limit`: 1 to 10, default 10.
+
+The daily period reads the previous 24 hours; weekly reads the previous seven days. The invoking Discord user's actor ID applies their hidden and feedback state to the result.
+
+### `/status`
+
+Returns an ephemeral operational snapshot containing uptime, PostgreSQL article and saved counts, enabled feed and external-source counts, summary and content cache counts, ranking profile, configured summary provider, scheduled-digest state, and latest collection timestamp.
 
 Supported topic slugs:
 
@@ -84,25 +84,29 @@ Articles returned by `/top` and `/search` have four buttons:
 
 - `관심`: stores `Interested` with weight `+3`.
 - `별로`: stores `NotInterested` with weight `-2`.
-- `저장`: adds the article to the invoking user's saved list. Repeated clicks are idempotent.
-- `숨김`: stores `Hidden` with weight `-3` and excludes that article from later `/top` and `/search` results for the same Discord user.
+- `저장`: adds the article to the user's saved list idempotently.
+- `숨김`: stores `Hidden` with weight `-3` and excludes the article from that user's later ranked results.
 
-Articles returned by `/saved` replace `저장` with `저장 해제`. Removing a saved article does not delete the article or alter its feedback.
+Articles returned by `/saved` replace `저장` with `저장 해제`. Button custom IDs contain only action and article UUID. Actor identity is derived from the authenticated interaction as `discord:<user-id>`.
 
-Button custom IDs contain only the action and article UUID. Actor identity is derived from the authenticated Discord interaction as `discord:<user-id>` and is never accepted from button data.
+## Scheduled delivery
 
-A user's next feedback click for the same article replaces their previous feedback. The deterministic base score remains unchanged; feedback is applied only while ranked results are read.
+Daily and weekly schedules are optional. A schedule specifies timezone, local clock time, public destination channel, actor user ID, topic, and article limit.
 
-## Markdown export
+The destination channel must also be in `DISCORD_ALLOWED_CHANNEL_IDS`. The actor user ID supplies personalized hidden and feedback state; it is not mentioned in the public message.
 
-Exports are capped at 100 articles. The generated file includes a verification notice because Signal Radar preserves source links but does not claim that collected headlines or external content are accurate. File names include the UTC export timestamp.
+Each occurrence uses a persistent `(delivery_key, window_start)` receipt with an expiring ownership token:
 
-No Discord user ID is written into the export file. Saved rows remain private to their actor ID in PostgreSQL, and only the authenticated user can request their own list through these commands.
+- a completed occurrence is not sent twice after restart;
+- an interrupted lease can be reclaimed after expiry;
+- a failed send records a bounded error and becomes retryable;
+- a zero-article occurrence is completed without posting an empty message;
+- manual `/digest` calls do not consume scheduled receipts.
 
-## Response limits
+## Response and synchronization behavior
 
-Interactive article results are ephemeral and contain at most five embeds. Each article consumes one component row with four buttons, matching Discord's five-row message-component limit. Markdown export is ephemeral and produces one bounded attachment. Structured summaries produce one bounded ephemeral embed.
+Interactive results are ephemeral. Ranked and saved results contain at most five embeds because each article consumes one Discord component row. `/digest` and `/status` produce one bounded embed. Scheduled digests are public messages in the configured channel.
 
-## Command synchronization
+The Ready handler bulk-overwrites the application's Guild command set. `/summarize` is included only when a provider runtime is enabled. Guild commands usually appear shortly after the Worker reaches Ready.
 
-The ready handler bulk-overwrites the application's guild command set with Signal Radar's current command definitions. This makes schema changes deterministic and immediately visible for guild commands. `/summarize` is included only when its provider runtime is enabled. Any additional commands for the same Discord application should therefore be added to the same code-controlled command set.
+For the complete installation process, see [Discord에 Signal Radar 적용하기](discord-setup-ko.md).
