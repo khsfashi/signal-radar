@@ -14,8 +14,10 @@ Signal Radar is a personal technology-intelligence pipeline for collecting, norm
 - Classifies articles into multiple deterministic topics.
 - Scores source trust, personal topic interest, practical impact, and freshness.
 - Persists every score component and the ranking-profile version.
-- Exposes private Discord `/top` and `/search` ranked queries.
+- Exposes private Discord `/top`, `/search`, `/saved`, and `/export` workflows.
 - Stores interested, not-interested, and per-user hidden feedback from Discord buttons.
+- Stores an independent per-user article reading list.
+- Exports up to 100 saved source links as provider-neutral UTF-8 Markdown.
 - Preserves idempotency across restarts with database constraints and expiring leases.
 - Tracks source success, failure, retry, and quarantine state.
 - Runs PostgreSQL migrations with checksum validation and an advisory lock.
@@ -60,9 +62,11 @@ dotnet run --project src/SignalRadar.Worker
 
 When `DISCORD_ENABLED=true`, configure the bot token and allow-listed guild, channel, and optional ingestion-author identifiers. Enable **Message Content Intent** for article ingestion, and install the application with the `bot` and `applications.commands` scopes.
 
-The gateway synchronizes guild-scoped `/top` and `/search` commands. Results are ephemeral and include article-specific `관심`, `별로`, and `숨김` buttons. Hidden articles are excluded from later results for the same Discord user.
+The gateway synchronizes guild-scoped `/top`, `/search`, `/saved`, and `/export` commands. Ranked results are ephemeral and include article-specific `관심`, `별로`, `저장`, and `숨김` buttons. Saved-list results provide `저장 해제`, and hidden articles are excluded from later ranked results for the same Discord user.
 
-See [Discord interactions](docs/discord-interactions.md) for command options, topic slugs, feedback behavior, and command synchronization.
+`/export` creates a bounded Markdown attachment containing the user's saved source links, timestamps, topics, and current scores. The export is usable manually with any analysis tool and does not require an LLM API key.
+
+See [Discord interactions](docs/discord-interactions.md) for command options, topic slugs, feedback behavior, saved-list behavior, and command synchronization.
 
 ## RSS and Atom
 
@@ -99,6 +103,7 @@ See [Ranking and feedback](docs/ranking.md) for the formula, profile format, per
 - Stable external items are unique by `(source, external_id)` even when their URLs change.
 - Ranking components and the profile version used at collection time are preserved.
 - Explicit feedback is unique per article and actor.
+- Saved articles are unique per article and actor and remain separate from feedback.
 - A user's hidden articles are excluded from their later Discord ranked queries.
 - Discord messages, feeds, and external API sources use expiring tokenized leases.
 - Five consecutive polling failures quarantine a source for six hours.
