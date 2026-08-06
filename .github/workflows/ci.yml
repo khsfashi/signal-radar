@@ -1,0 +1,33 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore SignalRadar.sln
+
+      - name: Build
+        run: dotnet build SignalRadar.sln --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test SignalRadar.sln --configuration Release --no-build --collect:"XPlat Code Coverage"

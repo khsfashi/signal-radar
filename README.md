@@ -1,2 +1,54 @@
-# signal-radar
-Personal technology intelligence radar for collecting, filtering, ranking, and summarizing AI, game industry, and developer news.
+# Signal Radar
+
+Signal Radar is a personal technology-intelligence pipeline for collecting, normalizing, ranking, and summarizing AI, game-industry, and software-development news.
+
+## Initial goals
+
+- Collect trusted signals from Discord, RSS/Atom, official blogs, GitHub releases, and APIs.
+- Preserve source URLs and raw metadata before enrichment.
+- Remove duplicates before using an LLM.
+- Keep ranking deterministic and explainable.
+- Support both manual Markdown export and optional BYOK LLM providers.
+- Treat Discord as an inbox and control surface, not the primary database.
+
+## Repository status
+
+This repository is in the bootstrap phase. The first milestone establishes the .NET solution boundaries and a small, testable article-ingestion vertical slice.
+
+## Technology baseline
+
+- .NET 10 LTS
+- C#
+- PostgreSQL for persistent storage
+- Docker Compose for local infrastructure
+- xUnit for tests
+- GitHub Actions for build and test validation
+
+## Quick start
+
+Requirements:
+
+- .NET 10 SDK
+- Docker with Docker Compose
+
+```bash
+dotnet restore SignalRadar.sln
+dotnet build SignalRadar.sln --configuration Release
+dotnet test SignalRadar.sln --configuration Release --no-build
+docker compose up -d postgres
+```
+
+Run the temporary ingestion sample:
+
+```bash
+dotnet run --project src/SignalRadar.Worker
+```
+
+## Configuration
+
+Copy `.env.example` to `.env` for local infrastructure. Never commit bot tokens, LLM API keys, database passwords, or Discord identifiers.
+
+## Documentation
+
+- [Architecture](docs/architecture.md)
+- [Roadmap](docs/roadmap.md)

@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../SignalRadar.Application/SignalRadar.Application.csproj" />
+    <ProjectReference Include="../SignalRadar.Domain/SignalRadar.Domain.csproj" />
+  </ItemGroup>
+</Project>
