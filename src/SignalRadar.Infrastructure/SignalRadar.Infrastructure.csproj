@@ -4,6 +4,7 @@
     <ProjectReference Include="../SignalRadar.Domain/SignalRadar.Domain.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="AngleSharp" />
     <PackageReference Include="Npgsql" />
   </ItemGroup>
   <ItemGroup>
