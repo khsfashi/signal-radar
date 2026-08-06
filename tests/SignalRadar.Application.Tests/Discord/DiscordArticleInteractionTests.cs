@@ -30,6 +30,27 @@ public sealed class DiscordArticleInteractionTests
     }
 
     [Theory]
+    [InlineData(DiscordArticleSaveAction.Add)]
+    [InlineData(DiscordArticleSaveAction.Remove)]
+    public void SaveCustomId_RoundTrips(DiscordArticleSaveAction action)
+    {
+        Guid articleId = Guid.NewGuid();
+        string customId = DiscordArticleInteractionCodec.CreateSaveCustomId(
+            action,
+            articleId);
+
+        bool parsed = DiscordArticleInteractionCodec.TryParseSaveCustomId(
+            customId,
+            out Guid parsedArticleId,
+            out DiscordArticleSaveAction parsedAction);
+
+        Assert.True(parsed);
+        Assert.Equal(articleId, parsedArticleId);
+        Assert.Equal(action, parsedAction);
+        Assert.True(customId.Length <= 100);
+    }
+
+    [Theory]
     [InlineData("all", ArticleTopic.None)]
     [InlineData("ai", ArticleTopic.ArtificialIntelligence)]
     [InlineData("game-development", ArticleTopic.GameDevelopment)]
@@ -47,10 +68,12 @@ public sealed class DiscordArticleInteractionTests
         DateTimeOffset now = new(2026, 8, 6, 10, 0, 0, TimeSpan.Zero);
         StubRankingReader reader = new();
         StubFeedbackStore feedbackStore = new();
-        DiscordArticleInteractionService service = new(
+        StubSaveStore saveStore = new();
+        DiscordArticleInteractionService service = CreateService(
             reader,
             feedbackStore,
-            new FixedTimeProvider(now));
+            saveStore,
+            now);
 
         await service.GetTopAsync(
             userId: 123,
@@ -72,10 +95,12 @@ public sealed class DiscordArticleInteractionTests
         DateTimeOffset now = new(2026, 8, 6, 10, 0, 0, TimeSpan.Zero);
         StubRankingReader reader = new();
         StubFeedbackStore feedbackStore = new();
-        DiscordArticleInteractionService service = new(
+        StubSaveStore saveStore = new();
+        DiscordArticleInteractionService service = CreateService(
             reader,
             feedbackStore,
-            new FixedTimeProvider(now));
+            saveStore,
+            now);
         Guid articleId = Guid.NewGuid();
 
         await service.SetFeedbackAsync(
@@ -88,6 +113,55 @@ public sealed class DiscordArticleInteractionTests
         Assert.Equal("discord:456", feedbackStore.ActorId);
         Assert.Equal(ArticleFeedbackKind.Hidden, feedbackStore.Kind);
         Assert.Equal(now, feedbackStore.OccurredAt);
+    }
+
+    [Fact]
+    public async Task SaveAndSavedQueries_UseDiscordActorIdentity()
+    {
+        DateTimeOffset now = new(2026, 8, 6, 10, 0, 0, TimeSpan.Zero);
+        StubRankingReader reader = new();
+        StubFeedbackStore feedbackStore = new();
+        StubSaveStore saveStore = new();
+        DiscordArticleInteractionService service = CreateService(
+            reader,
+            feedbackStore,
+            saveStore,
+            now);
+        Guid articleId = Guid.NewGuid();
+
+        Assert.True(await service.SaveAsync(
+            789,
+            articleId,
+            CancellationToken.None));
+        await service.GetSavedAsync(
+            789,
+            days: 90,
+            ArticleTopic.DeveloperTools,
+            limit: 5,
+            CancellationToken.None);
+
+        Assert.Equal(articleId, saveStore.ArticleId);
+        Assert.Equal("discord:789", saveStore.ActorId);
+        Assert.Equal(now, saveStore.SavedAt);
+        Assert.NotNull(saveStore.Query);
+        Assert.Equal("discord:789", saveStore.Query.ActorId);
+        Assert.Equal(now.AddDays(-90), saveStore.Query.SavedSince);
+        Assert.Equal(ArticleTopic.DeveloperTools, saveStore.Query.TopicMask);
+    }
+
+    private static DiscordArticleInteractionService CreateService(
+        StubRankingReader reader,
+        StubFeedbackStore feedbackStore,
+        StubSaveStore saveStore,
+        DateTimeOffset now)
+    {
+        return new DiscordArticleInteractionService(
+            reader,
+            feedbackStore,
+            saveStore,
+            saveStore,
+            new SavedArticleMarkdownExporter(),
+            new FixedTimeProvider(now));
     }
 
     private sealed class StubRankingReader : IArticleRankingReader
@@ -150,6 +224,47 @@ public sealed class DiscordArticleInteractionTests
             CancellationToken cancellationToken)
         {
             return ValueTask.FromResult(new ArticleFeedbackAggregate(0, 0));
+        }
+    }
+
+    private sealed class StubSaveStore : IArticleSaveStore, IArticleSavedReader
+    {
+        public Guid ArticleId { get; private set; }
+
+        public string? ActorId { get; private set; }
+
+        public DateTimeOffset SavedAt { get; private set; }
+
+        public SavedArticleQuery? Query { get; private set; }
+
+        public ValueTask<bool> TryAddAsync(
+            Guid articleId,
+            string actorId,
+            DateTimeOffset savedAt,
+            CancellationToken cancellationToken)
+        {
+            ArticleId = articleId;
+            ActorId = actorId;
+            SavedAt = savedAt;
+            return ValueTask.FromResult(true);
+        }
+
+        public ValueTask<bool> RemoveAsync(
+            Guid articleId,
+            string actorId,
+            CancellationToken cancellationToken)
+        {
+            ArticleId = articleId;
+            ActorId = actorId;
+            return ValueTask.FromResult(true);
+        }
+
+        public ValueTask<IReadOnlyList<SavedArticle>> GetSavedAsync(
+            SavedArticleQuery query,
+            CancellationToken cancellationToken)
+        {
+            Query = query;
+            return ValueTask.FromResult<IReadOnlyList<SavedArticle>>([]);
         }
     }
 
