@@ -16,6 +16,16 @@ public enum ArticleTopic
 
 public sealed class ArticleAssessment
 {
+    private const ArticleTopic SupportedTopics =
+        ArticleTopic.ArtificialIntelligence
+        | ArticleTopic.GameIndustry
+        | ArticleTopic.GameDevelopment
+        | ArticleTopic.DeveloperTools
+        | ArticleTopic.Research
+        | ArticleTopic.Business
+        | ArticleTopic.Security
+        | ArticleTopic.Other;
+
     public static ArticleAssessment Unclassified { get; } = new(
         ArticleTopic.Other,
         ArticleTopic.Other,
@@ -89,7 +99,7 @@ public sealed class ArticleAssessment
     private static void ValidateTopicMask(ArticleTopic topics, string parameterName)
     {
         if (topics == ArticleTopic.None
-            || (topics & ~ArticleTopic.Other) != ArticleTopic.None)
+            || (topics & ~SupportedTopics) != ArticleTopic.None)
         {
             throw new ArgumentOutOfRangeException(
                 parameterName,
