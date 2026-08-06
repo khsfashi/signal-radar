@@ -2,6 +2,7 @@ using SignalRadar.Application.Articles;
 using SignalRadar.Bot.Discord;
 using SignalRadar.Infrastructure.Articles;
 using SignalRadar.Infrastructure.Discord;
+using SignalRadar.Infrastructure.Ranking;
 using Xunit;
 
 namespace SignalRadar.Application.Tests.Discord;
@@ -73,6 +74,8 @@ public sealed class DiscordInboxTests
         CollectArticleUseCase collectArticle = new(
             new InMemoryArticleInbox(),
             new CanonicalUrlNormalizer(),
+            new RuleBasedArticleAssessmentPolicy(
+                ArticleRankingProfile.CreateDefault()),
             TimeProvider.System);
 
         return new DiscordInboxProcessor(
