@@ -4,6 +4,7 @@ using SignalRadar.Application.Articles;
 using SignalRadar.Application.Digests;
 using SignalRadar.Application.ExternalSources;
 using SignalRadar.Application.Feeds;
+using SignalRadar.Application.Translation;
 using SignalRadar.Bot.Discord;
 using SignalRadar.Infrastructure.Articles;
 using SignalRadar.Infrastructure.Database;
@@ -12,8 +13,10 @@ using SignalRadar.Infrastructure.Discord;
 using SignalRadar.Infrastructure.ExternalSources;
 using SignalRadar.Infrastructure.Feeds;
 using SignalRadar.Infrastructure.Operations;
+using SignalRadar.Infrastructure.Preferences;
 using SignalRadar.Infrastructure.Publishing;
 using SignalRadar.Infrastructure.Ranking;
+using SignalRadar.Infrastructure.Translation;
 using SignalRadar.Worker.Digests;
 using SignalRadar.Worker.ExternalSources;
 using SignalRadar.Worker.Feeds;
@@ -126,6 +129,44 @@ List<Task> runningTasks = [];
 DiscordInboxGateway? discordGateway = null;
 HttpClient? feedHttpClient = null;
 HttpClient? externalHttpClient = null;
+HttpClient? translationHttpClient = null;
+ITitleTranslator titleTranslator = new PassthroughTitleTranslator();
+
+if (ParseBoolean("TITLE_TRANSLATION_ENABLED", defaultValue: true))
+{
+    string endpointValue = Environment.GetEnvironmentVariable(
+        "TITLE_TRANSLATION_ENDPOINT") ?? "http://libretranslate:5000/";
+
+    if (!Uri.TryCreate(endpointValue, UriKind.Absolute, out Uri? translationEndpoint)
+        || translationEndpoint.Scheme is not ("http" or "https"))
+    {
+        throw new InvalidOperationException(
+            "TITLE_TRANSLATION_ENDPOINT must be an absolute HTTP(S) URL.");
+    }
+
+    SocketsHttpHandler translationHandler = CreateHttpHandler(
+        ParseInteger(
+            "TITLE_TRANSLATION_HTTP_MAX_CONNECTIONS_PER_SERVER",
+            defaultValue: 2,
+            minimum: 1,
+            maximum: 8));
+    translationHttpClient = new HttpClient(
+        translationHandler,
+        disposeHandler: true)
+    {
+        Timeout = TimeSpan.FromSeconds(ParseInteger(
+            "TITLE_TRANSLATION_TIMEOUT_SECONDS",
+            defaultValue: 10,
+            minimum: 1,
+            maximum: 60))
+    };
+    titleTranslator = new PostgresLibreTranslateTitleTranslator(
+        dataSource,
+        translationHttpClient,
+        translationEndpoint,
+        log);
+    log($"Title translation enabled through {translationEndpoint.Host} with PostgreSQL cache.");
+}
 
 try
 {
@@ -351,9 +392,18 @@ try
             receiptStore,
             collectArticle);
         DiscordSocketMessageMapper mapper = new();
-        PostgresArticleRankingReader rankingReader = new(dataSource);
+        PostgresArticleRankingReader baseRankingReader = new(dataSource);
+        PostgresSourcePreferenceStore sourcePreferenceStore = new(dataSource);
+        IArticleRankingReader rankingReader = new TranslatingArticleRankingReader(
+            new SourceFilteredArticleRankingReader(
+                baseRankingReader,
+                sourcePreferenceStore),
+            titleTranslator);
         PostgresArticleFeedbackStore feedbackStore = new(dataSource);
         PostgresArticleSaveStore saveStore = new(dataSource);
+        IArticleSavedReader savedReader = new TranslatingArticleSavedReader(
+            saveStore,
+            titleTranslator);
         SavedArticleMarkdownExporter markdownExporter = new();
         GenerateArticleDigestUseCase digestUseCase = new(
             rankingReader,
@@ -369,7 +419,7 @@ try
             rankingReader,
             feedbackStore,
             saveStore,
-            saveStore,
+            savedReader,
             markdownExporter,
             timeProvider,
             summaryRuntime.UseCase);
@@ -386,6 +436,14 @@ try
             statusEnabled: true,
             automaticTopicPublishingEnabled: topicPublishing is not null,
             log);
+        PostgresFeedSourceAdministrationStore feedAdministrationStore = new(dataSource);
+        PostgresDiscordTopicRouteStore topicRouteStore = new(dataSource);
+        DiscordManagementCommandHandler managementCommandHandler = new(
+            discordOptions,
+            feedAdministrationStore,
+            topicRouteStore,
+            sourcePreferenceStore,
+            log);
 
         discordGateway = new DiscordInboxGateway(
             discordOptions,
@@ -393,7 +451,8 @@ try
             mapper,
             log,
             interactionHandler,
-            helpCommandHandler);
+            helpCommandHandler,
+            managementCommandHandler);
         runningTasks.Add(discordGateway.RunAsync(lifetime.Token));
 
         if (topicPublishing is not null)
@@ -403,13 +462,16 @@ try
             DiscordAutomaticTopicPublisher publisher = new(
                 topicPublishing,
                 publicationStore,
+                topicRouteStore,
+                titleTranslator,
                 discordGateway,
                 timeProvider,
                 log);
             runningTasks.Add(publisher.RunAsync(lifetime.Token));
             log(
-                $"Automatic topic publishing enabled for "
-                    + $"{topicPublishing.Routes.Count} Discord routes.");
+                $"Batched automatic topic publishing enabled; "
+                    + $"{topicPublishing.Routes.Count} legacy environment routes loaded, "
+                    + "runtime routes are stored in PostgreSQL.");
         }
 
         if (digestSchedule is not null)
@@ -454,6 +516,7 @@ finally
     discordGateway?.Dispose();
     feedHttpClient?.Dispose();
     externalHttpClient?.Dispose();
+    translationHttpClient?.Dispose();
 }
 
 static SocketsHttpHandler CreateHttpHandler(int maxConnectionsPerServer)
