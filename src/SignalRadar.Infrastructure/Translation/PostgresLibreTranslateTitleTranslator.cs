@@ -26,7 +26,7 @@ public sealed class PostgresLibreTranslateTitleTranslator : ITitleTranslator
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         ArgumentNullException.ThrowIfNull(baseEndpoint);
         _translateEndpoint = new Uri(
-            baseEndpoint.AbsoluteUri.EndsWith('/', StringComparison.Ordinal)
+            baseEndpoint.AbsoluteUri.EndsWith("/", StringComparison.Ordinal)
                 ? baseEndpoint
                 : new Uri(baseEndpoint.AbsoluteUri + "/"),
             "translate");
