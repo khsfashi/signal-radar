@@ -28,7 +28,7 @@ public sealed class PostgresArticleContentCacheTests
         PostgresDatabaseMigrator migrator = new(dataSource);
         await migrator.MigrateAsync(CancellationToken.None);
         await using (NpgsqlCommand reset = dataSource.CreateCommand(
-            "TRUNCATE TABLE article_content_cache, article_feedback, article_saves, discord_message_receipts, articles;"))
+            "TRUNCATE TABLE automatic_topic_publication_receipts, article_content_cache, article_feedback, article_saves, discord_message_receipts, articles;"))
         {
             await reset.ExecuteNonQueryAsync(CancellationToken.None);
         }

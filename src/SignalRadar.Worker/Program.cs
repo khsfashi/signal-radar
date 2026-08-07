@@ -12,11 +12,13 @@ using SignalRadar.Infrastructure.Discord;
 using SignalRadar.Infrastructure.ExternalSources;
 using SignalRadar.Infrastructure.Feeds;
 using SignalRadar.Infrastructure.Operations;
+using SignalRadar.Infrastructure.Publishing;
 using SignalRadar.Infrastructure.Ranking;
 using SignalRadar.Worker.Digests;
 using SignalRadar.Worker.ExternalSources;
 using SignalRadar.Worker.Feeds;
 using SignalRadar.Worker.Operations;
+using SignalRadar.Worker.Publishing;
 using SignalRadar.Worker.Summaries;
 
 DateTimeOffset startedAt = DateTimeOffset.UtcNow;
@@ -80,6 +82,10 @@ ulong[] allowedChannelIds = discordEnabled
     : [];
 DiscordDigestScheduleOptions? digestSchedule =
     DiscordDigestScheduleConfiguration.Load(
+        discordEnabled,
+        allowedChannelIds);
+DiscordAutomaticTopicPublishingOptions? topicPublishing =
+    DiscordAutomaticTopicPublishingConfiguration.Load(
         discordEnabled,
         allowedChannelIds);
 
@@ -373,14 +379,38 @@ try
             log,
             digestUseCase,
             statusReader);
+        DiscordHelpCommandHandler helpCommandHandler = new(
+            discordOptions,
+            summaryRuntime.Enabled,
+            digestEnabled: true,
+            statusEnabled: true,
+            automaticTopicPublishingEnabled: topicPublishing is not null,
+            log);
 
         discordGateway = new DiscordInboxGateway(
             discordOptions,
             processor,
             mapper,
             log,
-            interactionHandler);
+            interactionHandler,
+            helpCommandHandler);
         runningTasks.Add(discordGateway.RunAsync(lifetime.Token));
+
+        if (topicPublishing is not null)
+        {
+            PostgresAutomaticTopicPublicationStore publicationStore = new(
+                dataSource);
+            DiscordAutomaticTopicPublisher publisher = new(
+                topicPublishing,
+                publicationStore,
+                discordGateway,
+                timeProvider,
+                log);
+            runningTasks.Add(publisher.RunAsync(lifetime.Token));
+            log(
+                $"Automatic topic publishing enabled for "
+                    + $"{topicPublishing.Routes.Count} Discord routes.");
+        }
 
         if (digestSchedule is not null)
         {

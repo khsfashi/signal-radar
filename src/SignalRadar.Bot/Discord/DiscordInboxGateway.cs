@@ -2,6 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using Discord;
 using Discord.WebSocket;
 using SignalRadar.Application.Digests;
+using SignalRadar.Application.Publishing;
 
 namespace SignalRadar.Bot.Discord;
 
@@ -50,6 +51,7 @@ public sealed class DiscordInboxGateway : IDisposable
     private readonly DiscordInboxProcessor _processor;
     private readonly DiscordSocketMessageMapper _mapper;
     private readonly DiscordArticleInteractionHandler? _interactionHandler;
+    private readonly DiscordHelpCommandHandler? _helpCommandHandler;
     private readonly DiscordSocketClient _client;
     private readonly Action<string> _log;
     private readonly TaskCompletionSource<bool> _ready = new(
@@ -61,12 +63,14 @@ public sealed class DiscordInboxGateway : IDisposable
         DiscordInboxProcessor processor,
         DiscordSocketMessageMapper mapper,
         Action<string>? log = null,
-        DiscordArticleInteractionHandler? interactionHandler = null)
+        DiscordArticleInteractionHandler? interactionHandler = null,
+        DiscordHelpCommandHandler? helpCommandHandler = null)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _processor = processor ?? throw new ArgumentNullException(nameof(processor));
         _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
         _interactionHandler = interactionHandler;
+        _helpCommandHandler = helpCommandHandler;
         _log = log ?? (static _ => { });
 
         _client = new DiscordSocketClient(new DiscordSocketConfig
@@ -81,9 +85,13 @@ public sealed class DiscordInboxGateway : IDisposable
         _client.Ready += HandleReadyAsync;
         _client.MessageReceived += HandleMessageAsync;
 
-        if (_interactionHandler is not null)
+        if (_interactionHandler is not null || _helpCommandHandler is not null)
         {
             _client.SlashCommandExecuted += HandleSlashCommandAsync;
+        }
+
+        if (_interactionHandler is not null)
+        {
             _client.ButtonExecuted += HandleButtonAsync;
         }
     }
@@ -144,6 +152,59 @@ public sealed class DiscordInboxGateway : IDisposable
         return message.Id;
     }
 
+    public async ValueTask<ulong> SendAutomaticTopicArticleAsync(
+        ulong channelId,
+        AutomaticTopicPublicationCandidate article,
+        CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(article);
+
+        if (!_options.AllowedChannelIds.Contains(channelId))
+        {
+            throw new InvalidOperationException(
+                "Automatic topic channel is not in DISCORD_ALLOWED_CHANNEL_IDS.");
+        }
+
+        await _ready.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        SocketChannel channel = _client.GetChannel(channelId)
+            ?? throw new InvalidOperationException(
+                $"Discord channel {channelId} is unavailable.");
+        RequestOptions requestOptions = new()
+        {
+            CancelToken = cancellationToken
+        };
+        Embed embed = DiscordAutomaticTopicMessageFactory.BuildEmbed(article);
+        MessageComponent components =
+            DiscordAutomaticTopicMessageFactory.BuildComponents(article);
+
+        if (channel is IForumChannel forumChannel)
+        {
+            IThreadChannel thread = await forumChannel.CreatePostAsync(
+                DiscordAutomaticTopicMessageFactory.GetForumTitle(article),
+                text: DiscordAutomaticTopicMessageFactory.GetHeading(article),
+                embed: embed,
+                options: requestOptions,
+                allowedMentions: AllowedMentions.None,
+                components: components).ConfigureAwait(false);
+            return thread.Id;
+        }
+
+        if (channel is not IMessageChannel messageChannel)
+        {
+            throw new InvalidOperationException(
+                $"Discord channel {channelId} cannot receive public article messages.");
+        }
+
+        IUserMessage message = await messageChannel.SendMessageAsync(
+            text: DiscordAutomaticTopicMessageFactory.GetHeading(article),
+            embed: embed,
+            allowedMentions: AllowedMentions.None,
+            components: components,
+            options: requestOptions).ConfigureAwait(false);
+        return message.Id;
+    }
+
     public void Dispose()
     {
         if (_disposed)
@@ -154,6 +215,10 @@ public sealed class DiscordInboxGateway : IDisposable
         if (_interactionHandler is not null)
         {
             _client.ButtonExecuted -= HandleButtonAsync;
+        }
+
+        if (_interactionHandler is not null || _helpCommandHandler is not null)
+        {
             _client.SlashCommandExecuted -= HandleSlashCommandAsync;
         }
 
@@ -194,10 +259,22 @@ public sealed class DiscordInboxGateway : IDisposable
             await _interactionHandler.RegisterCommandsAsync(_client)
                 .ConfigureAwait(false);
         }
+
+        if (_helpCommandHandler is not null)
+        {
+            await _helpCommandHandler.RegisterAsync(_client)
+                .ConfigureAwait(false);
+        }
     }
 
     private Task HandleSlashCommandAsync(SocketSlashCommand command)
     {
+        if (string.Equals(command.Data.Name, "help", StringComparison.Ordinal)
+            && _helpCommandHandler is not null)
+        {
+            return _helpCommandHandler.HandleAsync(command);
+        }
+
         return _interactionHandler?.HandleSlashCommandAsync(command)
             ?? Task.CompletedTask;
     }
