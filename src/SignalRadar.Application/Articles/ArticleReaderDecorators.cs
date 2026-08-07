@@ -5,7 +5,8 @@ namespace SignalRadar.Application.Articles;
 
 public sealed class SourceFilteredArticleRankingReader : IArticleRankingReader
 {
-    private const int ExpandedLimit = 100;
+    private const int ExpandedTopLimit = 100;
+    private const int ExpandedSearchLimit = 25;
     private readonly IArticleRankingReader _inner;
     private readonly ISourcePreferenceStore _preferences;
 
@@ -35,7 +36,7 @@ public sealed class SourceFilteredArticleRankingReader : IArticleRankingReader
 
         ArticleRankingQuery expanded = query with
         {
-            Limit = Math.Max(query.Limit, ExpandedLimit)
+            Limit = Math.Max(query.Limit, ExpandedTopLimit)
         };
         IReadOnlyList<RankedArticle> candidates = await _inner
             .GetTopAsync(expanded, cancellationToken)
@@ -60,7 +61,7 @@ public sealed class SourceFilteredArticleRankingReader : IArticleRankingReader
 
         ArticleSearchQuery expanded = query with
         {
-            Limit = Math.Max(query.Limit, ExpandedLimit)
+            Limit = Math.Max(query.Limit, ExpandedSearchLimit)
         };
         IReadOnlyList<RankedArticle> candidates = await _inner
             .SearchAsync(expanded, cancellationToken)
