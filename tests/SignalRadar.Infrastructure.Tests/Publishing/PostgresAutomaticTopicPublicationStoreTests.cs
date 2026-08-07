@@ -45,8 +45,8 @@ public sealed class PostgresAutomaticTopicPublicationStoreTests
                 ArticleTopic.ArtificialIntelligence,
                 channelId,
                 activation,
-                minimumScore: 60m,
-                limit: 10,
+                60m,
+                10,
                 DiscordAutomaticTopicPublishingKind);
             IReadOnlyList<AutomaticTopicPublicationCandidate> firstCandidates =
                 await store.GetCandidatesAsync(
