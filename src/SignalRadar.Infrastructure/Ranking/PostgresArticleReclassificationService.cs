@@ -51,6 +51,8 @@ public sealed class PostgresArticleReclassificationService
                 break;
             }
 
+            List<AssessmentUpdate> changes = new(batch.Count);
+
             for (int index = 0; index < batch.Count; index++)
             {
                 StoredArticle stored = batch[index];
@@ -66,16 +68,17 @@ public sealed class PostgresArticleReclassificationService
                     stored.CollectedAt);
                 scanned++;
 
-                if (!AssessmentChanged(stored, assessment))
+                if (AssessmentChanged(stored, assessment))
                 {
-                    continue;
+                    changes.Add(new AssessmentUpdate(stored.Id, assessment));
                 }
+            }
 
-                await UpdateAssessmentAsync(
-                    stored.Id,
-                    assessment,
+            if (changes.Count > 0)
+            {
+                updated += await UpdateAssessmentsAsync(
+                    changes,
                     cancellationToken).ConfigureAwait(false);
-                updated++;
             }
 
             StoredArticle last = batch[^1];
@@ -166,34 +169,86 @@ public sealed class PostgresArticleReclassificationService
         return articles;
     }
 
-    private async ValueTask UpdateAssessmentAsync(
-        Guid articleId,
-        ArticleAssessment assessment,
+    private async ValueTask<int> UpdateAssessmentsAsync(
+        IReadOnlyList<AssessmentUpdate> changes,
         CancellationToken cancellationToken)
     {
+        Guid[] ids = new Guid[changes.Count];
+        int[] topics = new int[changes.Count];
+        short[] primaryTopics = new short[changes.Count];
+        short[] sourceTrust = new short[changes.Count];
+        short[] topicInterest = new short[changes.Count];
+        short[] practicalImpact = new short[changes.Count];
+        short[] freshness = new short[changes.Count];
+        decimal[] baseScores = new decimal[changes.Count];
+        string[] profileVersions = new string[changes.Count];
+
+        for (int index = 0; index < changes.Count; index++)
+        {
+            AssessmentUpdate change = changes[index];
+            ids[index] = change.Id;
+            topics[index] = (int)change.Assessment.Topics;
+            primaryTopics[index] = (short)change.Assessment.PrimaryTopic;
+            sourceTrust[index] = (short)change.Assessment.SourceTrust;
+            topicInterest[index] = (short)change.Assessment.TopicInterest;
+            practicalImpact[index] = (short)change.Assessment.PracticalImpact;
+            freshness[index] = (short)change.Assessment.Freshness;
+            baseScores[index] = change.Assessment.BaseScore;
+            profileVersions[index] = change.Assessment.ProfileVersion;
+        }
+
         const string sql = """
-            UPDATE articles
-            SET topics = $2,
-                primary_topic = $3,
-                source_trust = $4,
-                topic_interest = $5,
-                practical_impact = $6,
-                freshness = $7,
-                base_score = $8,
-                ranking_profile_version = $9
-            WHERE id = $1;
+            UPDATE articles AS article
+            SET topics = changed.topics,
+                primary_topic = changed.primary_topic,
+                source_trust = changed.source_trust,
+                topic_interest = changed.topic_interest,
+                practical_impact = changed.practical_impact,
+                freshness = changed.freshness,
+                base_score = changed.base_score,
+                ranking_profile_version = changed.ranking_profile_version
+            FROM unnest(
+                $1::uuid[],
+                $2::integer[],
+                $3::smallint[],
+                $4::smallint[],
+                $5::smallint[],
+                $6::smallint[],
+                $7::smallint[],
+                $8::numeric[],
+                $9::text[])
+                AS changed(
+                    id,
+                    topics,
+                    primary_topic,
+                    source_trust,
+                    topic_interest,
+                    practical_impact,
+                    freshness,
+                    base_score,
+                    ranking_profile_version)
+            WHERE article.id = changed.id;
             """;
         await using NpgsqlCommand command = _dataSource.CreateCommand(sql);
-        command.Parameters.AddWithValue(articleId);
-        command.Parameters.AddWithValue((int)assessment.Topics);
-        command.Parameters.AddWithValue((short)assessment.PrimaryTopic);
-        command.Parameters.AddWithValue((short)assessment.SourceTrust);
-        command.Parameters.AddWithValue((short)assessment.TopicInterest);
-        command.Parameters.AddWithValue((short)assessment.PracticalImpact);
-        command.Parameters.AddWithValue((short)assessment.Freshness);
-        command.Parameters.AddWithValue(assessment.BaseScore);
-        command.Parameters.AddWithValue(assessment.ProfileVersion);
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        command.Parameters.AddWithValue(ids);
+        command.Parameters.AddWithValue(topics);
+        command.Parameters.AddWithValue(primaryTopics);
+        command.Parameters.AddWithValue(sourceTrust);
+        command.Parameters.AddWithValue(topicInterest);
+        command.Parameters.AddWithValue(practicalImpact);
+        command.Parameters.AddWithValue(freshness);
+        command.Parameters.AddWithValue(baseScores);
+        command.Parameters.AddWithValue(profileVersions);
+        int affected = await command
+            .ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
+        if (affected != changes.Count)
+        {
+            throw new InvalidOperationException(
+                $"Expected to update {changes.Count} article assessments but updated {affected}.");
+        }
+
+        return affected;
     }
 
     private static bool AssessmentChanged(
@@ -212,6 +267,10 @@ public sealed class PostgresArticleReclassificationService
                 assessment.ProfileVersion,
                 StringComparison.Ordinal);
     }
+
+    private sealed record AssessmentUpdate(
+        Guid Id,
+        ArticleAssessment Assessment);
 
     private sealed record StoredArticle(
         Guid Id,
