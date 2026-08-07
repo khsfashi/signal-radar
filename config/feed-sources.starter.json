@@ -22,5 +22,53 @@
     "url": "https://github.blog/feed/",
     "pollIntervalMinutes": 30,
     "enabled": true
+  },
+  {
+    "name": "game industry - Game Developer",
+    "url": "https://www.gamedeveloper.com/rss.xml",
+    "pollIntervalMinutes": 20,
+    "enabled": true
+  },
+  {
+    "name": "game industry - GamesIndustry.biz",
+    "url": "https://www.gamesindustry.biz/feed",
+    "pollIntervalMinutes": 20,
+    "enabled": true
+  },
+  {
+    "name": "korea game industry - GameDonga",
+    "url": "https://game.donga.com/feeds/rss/news/",
+    "pollIntervalMinutes": 15,
+    "enabled": true
+  },
+  {
+    "name": "korea game industry - Seo Jeong-geun MTN",
+    "url": "https://news.google.com/rss/search?q=%EC%84%9C%EC%A0%95%EA%B7%BC%20MTN%20%EA%B2%8C%EC%9E%84&hl=ko&gl=KR&ceid=KR%3Ako",
+    "pollIntervalMinutes": 15,
+    "enabled": true
+  },
+  {
+    "name": "korea game industry - Google News",
+    "url": "https://news.google.com/rss/search?q=%EA%B2%8C%EC%9E%84%EC%97%85%EA%B3%84&hl=ko&gl=KR&ceid=KR%3Ako",
+    "pollIntervalMinutes": 20,
+    "enabled": true
+  },
+  {
+    "name": "economy - Bank of Korea press releases",
+    "url": "https://www.bok.or.kr/portal/bbs/B0000552/news.rss?menuNo=200690",
+    "pollIntervalMinutes": 30,
+    "enabled": true
+  },
+  {
+    "name": "economy - Bank of Korea outlook",
+    "url": "https://www.bok.or.kr/portal/bbs/P0002359/news.rss?menuNo=200443",
+    "pollIntervalMinutes": 60,
+    "enabled": true
+  },
+  {
+    "name": "stock market korea - Google News",
+    "url": "https://news.google.com/rss/search?q=%EC%BD%94%EC%8A%A4%ED%94%BC%20OR%20%EC%BD%94%EC%8A%A4%EB%8B%A5%20OR%20%EC%A3%BC%EA%B0%80&hl=ko&gl=KR&ceid=KR%3Ako",
+    "pollIntervalMinutes": 15,
+    "enabled": true
   }
 ]
