@@ -1,0 +1,5 @@
+# Known false positives: synthetic Discord snowflake examples in the initial .env.example.
+# Keep these as exact fingerprints; do not broadly allow Discord IDs.
+ceffd65fe29996ca8de7330d31cd7aa75b070f24:.env.example:discord-client-id:7
+ceffd65fe29996ca8de7330d31cd7aa75b070f24:.env.example:discord-client-id:8
+ceffd65fe29996ca8de7330d31cd7aa75b070f24:.env.example:discord-client-id:9

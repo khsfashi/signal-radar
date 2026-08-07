@@ -4,9 +4,16 @@
 **/obj
 **/TestResults
 .env
+.env.*
+secrets.json
+appsettings.Development.json
 config/feed-sources.json
 config/github-repositories.json
 config/ranking-profile.json
+*.log
+*.db
+*.db-shm
+*.db-wal
 .vs
 .vscode
 .idea
