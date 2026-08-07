@@ -5,6 +5,20 @@ namespace SignalRadar.Infrastructure.Ranking;
 
 public sealed class RuleBasedArticleAssessmentPolicy : IArticleAssessmentPolicy
 {
+    private static readonly string[] EconomyKeywords =
+    [
+        "inflation", "interest rate", "central bank", "gdp", "cpi",
+        "unemployment", "exchange rate", "macroeconomic", "economy",
+        "한국은행", "기준금리", "금리", "물가", "환율", "고용", "경제성장", "경제"
+    ];
+
+    private static readonly string[] MarketKeywords =
+    [
+        "stock market", "nasdaq", "s&p 500", "dow jones", "kospi", "kosdaq",
+        "share price", "earnings call", "market cap", "주가", "증시", "코스피",
+        "코스닥", "목표주가", "시가총액", "상한가", "하한가"
+    ];
+
     private readonly ArticleRankingProfile _profile;
 
     public RuleBasedArticleAssessmentPolicy(ArticleRankingProfile profile)
@@ -108,6 +122,23 @@ public sealed class RuleBasedArticleAssessmentPolicy : IArticleAssessmentPolicy
             }
         }
 
+        AddBuiltInTopic(
+            searchableText,
+            EconomyKeywords,
+            ArticleTopic.Economy,
+            priority: 58,
+            ref topics,
+            ref primaryTopic,
+            ref primaryPriority);
+        AddBuiltInTopic(
+            searchableText,
+            MarketKeywords,
+            ArticleTopic.Markets,
+            priority: 68,
+            ref topics,
+            ref primaryTopic,
+            ref primaryPriority);
+
         if (topics == ArticleTopic.None)
         {
             return (ArticleTopic.Other, ArticleTopic.Other);
@@ -131,6 +162,16 @@ public sealed class RuleBasedArticleAssessmentPolicy : IArticleAssessmentPolicy
             {
                 score = rule.Score;
             }
+        }
+
+        if ((topics & ArticleTopic.Markets) != ArticleTopic.None)
+        {
+            score = Math.Max(score, 70);
+        }
+
+        if ((topics & ArticleTopic.Economy) != ArticleTopic.None)
+        {
+            score = Math.Max(score, 65);
         }
 
         return score;
@@ -198,6 +239,34 @@ public sealed class RuleBasedArticleAssessmentPolicy : IArticleAssessmentPolicy
         }
 
         return 10;
+    }
+
+    private static void AddBuiltInTopic(
+        string searchableText,
+        IReadOnlyList<string> keywords,
+        ArticleTopic topic,
+        int priority,
+        ref ArticleTopic topics,
+        ref ArticleTopic primaryTopic,
+        ref int primaryPriority)
+    {
+        for (int index = 0; index < keywords.Count; index++)
+        {
+            if (!ContainsKeyword(searchableText, keywords[index]))
+            {
+                continue;
+            }
+
+            topics |= topic;
+
+            if (priority > primaryPriority)
+            {
+                primaryPriority = priority;
+                primaryTopic = topic;
+            }
+
+            return;
+        }
     }
 
     private static bool ContainsKeyword(string text, string keyword)
