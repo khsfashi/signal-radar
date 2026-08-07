@@ -68,6 +68,51 @@ public sealed class RuleBasedArticleAssessmentPolicyTests
     }
 
     [Fact]
+    public void Assess_DoesNotClassifyHostNameAsDeveloperTools()
+    {
+        RuleBasedArticleAssessmentPolicy policy = new(
+            ArticleRankingProfile.CreateDefault());
+        DateTimeOffset collectedAt = DateTimeOffset.UtcNow;
+        CollectedArticleCandidate candidate = new(
+            "코스닥, 엿새 만에 하락 전환 800선 아래로... 코스피 6200선",
+            "https://v.daum.net/v/20260807151800000",
+            "korea-markets",
+            collectedAt.AddMinutes(-10));
+
+        ArticleAssessment assessment = policy.Assess(
+            candidate,
+            new Uri(candidate.Url),
+            collectedAt);
+
+        Assert.True(assessment.Topics.HasFlag(ArticleTopic.Markets));
+        Assert.False(assessment.Topics.HasFlag(ArticleTopic.DeveloperTools));
+        Assert.Equal(ArticleTopic.Markets, assessment.PrimaryTopic);
+    }
+
+    [Fact]
+    public void Assess_DoesNotUseTitleEntityForSourceTrust()
+    {
+        RuleBasedArticleAssessmentPolicy policy = new(
+            ArticleRankingProfile.CreateDefault());
+        DateTimeOffset collectedAt = DateTimeOffset.UtcNow;
+        CollectedArticleCandidate candidate = new(
+            "OpenAI announces a new model",
+            "https://news.ycombinator.com/item?id=1",
+            "hacker news:topstories",
+            collectedAt.AddMinutes(-10));
+
+        ArticleAssessment assessment = policy.Assess(
+            candidate,
+            new Uri(candidate.Url),
+            collectedAt);
+
+        Assert.Equal(70, assessment.SourceTrust);
+        Assert.Equal(
+            ArticleTopic.ArtificialIntelligence,
+            assessment.PrimaryTopic);
+    }
+
+    [Fact]
     public void Assess_ClassifiesKoreanMacroeconomyWithoutProfileMigration()
     {
         RuleBasedArticleAssessmentPolicy policy = new(
