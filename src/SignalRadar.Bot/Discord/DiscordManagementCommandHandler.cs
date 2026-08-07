@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using Discord;
 using Discord.WebSocket;
+using SignalRadar.Application.Articles;
 using SignalRadar.Application.Feeds;
 using SignalRadar.Application.Preferences;
 using SignalRadar.Application.Publishing;
@@ -20,6 +21,7 @@ public sealed class DiscordManagementCommandHandler
         "route-set",
         "route-list",
         "route-remove",
+        "reclassify",
         "source-mute",
         "source-unmute",
         "source-muted"
@@ -29,6 +31,7 @@ public sealed class DiscordManagementCommandHandler
     private readonly IFeedSourceAdministrationStore _feedStore;
     private readonly IDiscordTopicRouteStore _routeStore;
     private readonly ISourcePreferenceStore _preferenceStore;
+    private readonly IArticleReclassificationService _reclassificationService;
     private readonly Action<string> _log;
     private readonly SemaphoreSlim _registrationLock = new(1, 1);
     private bool _registered;
@@ -38,6 +41,7 @@ public sealed class DiscordManagementCommandHandler
         IFeedSourceAdministrationStore feedStore,
         IDiscordTopicRouteStore routeStore,
         ISourcePreferenceStore preferenceStore,
+        IArticleReclassificationService reclassificationService,
         Action<string>? log = null)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
@@ -45,6 +49,8 @@ public sealed class DiscordManagementCommandHandler
         _routeStore = routeStore ?? throw new ArgumentNullException(nameof(routeStore));
         _preferenceStore = preferenceStore
             ?? throw new ArgumentNullException(nameof(preferenceStore));
+        _reclassificationService = reclassificationService
+            ?? throw new ArgumentNullException(nameof(reclassificationService));
         _log = log ?? (static _ => { });
     }
 
@@ -82,7 +88,7 @@ public sealed class DiscordManagementCommandHandler
             }
 
             _registered = true;
-            _log("Discord feed, route, and source preference commands synchronized.");
+            _log("Discord feed, route, reclassification, and source preference commands synchronized.");
         }
         finally
         {
@@ -135,6 +141,10 @@ public sealed class DiscordManagementCommandHandler
                     RequireManager(command);
                     await HandleRouteRemoveAsync(command).ConfigureAwait(false);
                     break;
+                case "reclassify":
+                    RequireManager(command);
+                    await HandleReclassifyAsync(command).ConfigureAwait(false);
+                    break;
                 case "source-mute":
                     await HandleSourceMuteAsync(command, true).ConfigureAwait(false);
                     break;
@@ -160,12 +170,20 @@ public sealed class DiscordManagementCommandHandler
         catch (Exception exception)
         {
             _log($"Discord management command {command.Data.Name} failed: {exception}");
+            const string errorMessage =
+                "명령을 처리하지 못했습니다. `/status`와 Worker 로그를 확인해 주세요.";
 
             if (!command.HasResponded)
             {
                 await command.RespondAsync(
-                    "명령을 처리하지 못했습니다. `/status`와 Worker 로그를 확인해 주세요.",
+                    errorMessage,
                     ephemeral: true).ConfigureAwait(false);
+            }
+            else
+            {
+                await command.ModifyOriginalResponseAsync(
+                    properties => properties.Content = errorMessage)
+                    .ConfigureAwait(false);
             }
         }
     }
@@ -310,6 +328,21 @@ public sealed class DiscordManagementCommandHandler
             ephemeral: true).ConfigureAwait(false);
     }
 
+    private async Task HandleReclassifyAsync(SocketSlashCommand command)
+    {
+        int days = GetInteger(command, "days", 30);
+        await command.DeferAsync(ephemeral: true).ConfigureAwait(false);
+        ArticleReclassificationResult result = await _reclassificationService
+            .ReclassifyAsync(TimeSpan.FromDays(days), CancellationToken.None)
+            .ConfigureAwait(false);
+        await command.ModifyOriginalResponseAsync(properties =>
+        {
+            properties.Content =
+                $"최근 {days}일 기사 {result.ScannedCount:N0}개를 현재 랭킹 정책으로 재평가했습니다. "
+                + $"평가 변경 {result.UpdatedCount:N0}개.";
+        }).ConfigureAwait(false);
+    }
+
     private async Task HandleSourceMuteAsync(
         SocketSlashCommand command,
         bool mute)
@@ -375,6 +408,16 @@ public sealed class DiscordManagementCommandHandler
         routeSet.AddOption("batch-minutes", ApplicationCommandOptionType.Integer, "모아서 게시할 시간(5~1440분, 기본 30)", minValue: 5, maxValue: 1440);
         routeSet.AddOption("min-score", ApplicationCommandOptionType.Number, "최소 점수(0~100, 기본 0)", minValue: 0, maxValue: 100);
 
+        SlashCommandBuilder reclassify = new SlashCommandBuilder()
+            .WithName("reclassify")
+            .WithDescription("[관리자] 기존 기사를 현재 랭킹/주제 규칙으로 다시 평가합니다.");
+        reclassify.AddOption(
+            "days",
+            ApplicationCommandOptionType.Integer,
+            "최근 며칠을 재평가할지(1~3650일, 기본 30)",
+            minValue: 1,
+            maxValue: 3650);
+
         return
         [
             feedAdd.Build(),
@@ -384,6 +427,7 @@ public sealed class DiscordManagementCommandHandler
             routeSet.Build(),
             new SlashCommandBuilder().WithName("route-list").WithDescription("[관리자] 주제별 뉴스 라우트를 확인합니다.").Build(),
             BuildStringCommand("route-remove", "[관리자] 런타임 뉴스 라우트를 삭제합니다.", "topic", "삭제할 주제"),
+            reclassify.Build(),
             BuildStringCommand("source-mute", "내 개인 조회에서 특정 소스를 제외합니다.", "source", "정확한 소스 이름"),
             BuildStringCommand("source-unmute", "개인 차단한 소스를 다시 표시합니다.", "source", "정확한 소스 이름"),
             new SlashCommandBuilder().WithName("source-muted").WithDescription("내가 차단한 뉴스 소스를 확인합니다.").Build()
