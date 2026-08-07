@@ -68,6 +68,28 @@ public sealed class RuleBasedArticleAssessmentPolicyTests
     }
 
     [Fact]
+    public void Assess_DoesNotClassifyDotNetHostnameAsDeveloperTools()
+    {
+        RuleBasedArticleAssessmentPolicy policy = new(
+            ArticleRankingProfile.CreateDefault());
+        DateTimeOffset collectedAt = DateTimeOffset.UtcNow;
+        CollectedArticleCandidate candidate = new(
+            "코스닥, 엿새 만에 하락 전환 800선 아래로",
+            "https://v.daum.net/v/20260807150000000",
+            "korea-markets",
+            collectedAt.AddMinutes(-10));
+
+        ArticleAssessment assessment = policy.Assess(
+            candidate,
+            new Uri(candidate.Url),
+            collectedAt);
+
+        Assert.True(assessment.Topics.HasFlag(ArticleTopic.Markets));
+        Assert.False(assessment.Topics.HasFlag(ArticleTopic.DeveloperTools));
+        Assert.Equal(ArticleTopic.Markets, assessment.PrimaryTopic);
+    }
+
+    [Fact]
     public void Assess_ClassifiesKoreanMacroeconomyWithoutProfileMigration()
     {
         RuleBasedArticleAssessmentPolicy policy = new(
