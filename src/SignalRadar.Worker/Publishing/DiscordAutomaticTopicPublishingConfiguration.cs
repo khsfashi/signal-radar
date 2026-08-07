@@ -19,7 +19,7 @@ public sealed record DiscordAutomaticTopicPublishingOptions(
     TimeSpan LeaseDuration,
     TimeSpan RetryDelay)
 {
-    public const string PublicationKind = "discord-topic-batch-v2";
+    public const string PublicationKind = "discord-topic-article-v1";
 }
 
 public static class DiscordAutomaticTopicPublishingConfiguration
