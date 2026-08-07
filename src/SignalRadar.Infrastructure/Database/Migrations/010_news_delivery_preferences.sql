@@ -45,3 +45,9 @@ CREATE TABLE discord_topic_routes (
 
 CREATE INDEX ix_discord_topic_routes_enabled
     ON discord_topic_routes (enabled, topic);
+
+CREATE TABLE discord_topic_batch_state (
+    singleton boolean PRIMARY KEY DEFAULT true,
+    activated_at timestamptz NOT NULL,
+    CONSTRAINT ck_discord_topic_batch_state_singleton CHECK (singleton)
+);
