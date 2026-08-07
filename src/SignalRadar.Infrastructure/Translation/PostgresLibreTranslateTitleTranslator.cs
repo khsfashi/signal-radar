@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Npgsql;
 using SignalRadar.Application.Translation;
 
@@ -174,13 +175,14 @@ public sealed class PostgresLibreTranslateTitleTranslator : ITitleTranslator
     }
 
     private sealed record TranslationRequest(
-        string Q,
-        string Source,
-        string Target,
-        string Format);
+        [property: JsonPropertyName("q")] string Q,
+        [property: JsonPropertyName("source")] string Source,
+        [property: JsonPropertyName("target")] string Target,
+        [property: JsonPropertyName("format")] string Format);
 
     private sealed class TranslationResponse
     {
+        [JsonPropertyName("translatedText")]
         public string? TranslatedText { get; init; }
     }
 }
