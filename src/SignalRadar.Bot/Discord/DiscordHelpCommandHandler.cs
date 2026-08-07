@@ -89,7 +89,7 @@ public sealed class DiscordHelpCommandHandler
             .WithTitle("Signal Radar 도움말")
             .WithDescription(
                 "슬래시 명령 결과는 요청한 사용자에게만 보입니다. "
-                    + "자동 토픽 공유와 예약 다이제스트는 채널에 남는 공개 게시물입니다.")
+                    + "자동 뉴스 브리핑과 예약 다이제스트는 채널에 남는 공개 게시물입니다.")
             .AddField(
                 "조회",
                 "`/top` 최신 상위 기사\n"
@@ -97,9 +97,24 @@ public sealed class DiscordHelpCommandHandler
                     + "`/saved` 저장 기사 조회",
                 inline: false)
             .AddField(
-                "보관·내보내기",
+                "보관·개인화",
                 "`/export` 저장 기사를 Markdown으로 내보내기\n"
+                    + "`/source-mute` 특정 소스를 내 개인 조회에서 제외\n"
+                    + "`/source-unmute` 소스 차단 해제\n"
+                    + "`/source-muted` 내 차단 소스 확인\n"
                     + "기사 버튼: 관심 / 별로 / 저장 / 숨김",
+                inline: false)
+            .AddField(
+                "관리자 · Feed",
+                "`/feed-add` RSS/Atom 구독 추가\n"
+                    + "`/feed-list` Feed 상태 확인\n"
+                    + "`/feed-enable` / `/feed-disable` 수집 켜기·끄기",
+                inline: false)
+            .AddField(
+                "관리자 · 채널 라우팅",
+                "`/route-set` 주제 → 채널, 배치 주기, 최소 점수 설정\n"
+                    + "`/route-list` 현재 런타임 라우트 확인\n"
+                    + "`/route-remove` 런타임 라우트 삭제",
                 inline: false);
 
         List<string> optionalCommands = [];
@@ -128,9 +143,9 @@ public sealed class DiscordHelpCommandHandler
         }
 
         builder.AddField(
-            "자동 공유",
+            "자동 뉴스 브리핑",
             _automaticTopicPublishingEnabled
-                ? "활성화됨 · 점수 기준을 통과한 새 기사가 주제별 채널에 공개됩니다."
+                ? "활성화됨 · 새 기사를 즉시 한 건씩 올리지 않고, 주제별 설정 시간 동안 모아 번역된 제목 목록으로 공개합니다. 기본 최소 점수는 0이라 점수만으로 숨기지 않습니다."
                 : "비활성화됨 · `DISCORD_TOPIC_PUBLISHING_ENABLED=true`로 켤 수 있습니다.",
             inline: false);
 
