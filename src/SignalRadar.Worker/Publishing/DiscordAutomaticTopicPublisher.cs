@@ -36,18 +36,25 @@ public sealed class DiscordAutomaticTopicPublisher
 
     public async Task RunAsync(CancellationToken cancellationToken)
     {
-        DateTimeOffset activatedAt = await _store.GetOrCreateActivationTimeAsync(
-            _timeProvider.GetUtcNow(),
+        DateTimeOffset now = _timeProvider.GetUtcNow();
+        DateTimeOffset legacyActivatedAt = await _store.GetOrCreateActivationTimeAsync(
+            now,
             cancellationToken).ConfigureAwait(false);
+        DateTimeOffset batchActivatedAt = await _routeStore
+            .GetOrCreateBatchActivationTimeAsync(now, cancellationToken)
+            .ConfigureAwait(false);
+        DateTimeOffset activatedAt = legacyActivatedAt > batchActivatedAt
+            ? legacyActivatedAt
+            : batchActivatedAt;
         _log(
             $"Batched Discord topic publishing started from {activatedAt:O}; "
-                + "runtime routes can be managed from Discord.");
+                + "existing delivery receipts are preserved and runtime routes can be managed from Discord.");
 
         try
         {
             while (!cancellationToken.IsCancellationRequested)
             {
-                DateTimeOffset now = _timeProvider.GetUtcNow();
+                now = _timeProvider.GetUtcNow();
                 IReadOnlyList<ManagedDiscordTopicRoute> routes =
                     await GetEffectiveRoutesAsync(cancellationToken).ConfigureAwait(false);
 
