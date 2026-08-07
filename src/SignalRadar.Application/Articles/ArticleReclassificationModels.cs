@@ -6,7 +6,7 @@ public sealed record ArticleReclassificationResult(
 
 public interface IArticleReclassificationService
 {
-    ValueTask<ArticleReclassificationResult> ReclassifyAsync(
+    public ValueTask<ArticleReclassificationResult> ReclassifyAsync(
         TimeSpan age,
         CancellationToken cancellationToken);
 }
