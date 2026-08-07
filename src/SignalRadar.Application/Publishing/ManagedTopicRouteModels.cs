@@ -11,6 +11,10 @@ public sealed record ManagedDiscordTopicRoute(
 
 public interface IDiscordTopicRouteStore
 {
+    public ValueTask<DateTimeOffset> GetOrCreateBatchActivationTimeAsync(
+        DateTimeOffset now,
+        CancellationToken cancellationToken);
+
     public ValueTask<IReadOnlyList<ManagedDiscordTopicRoute>> GetAllAsync(
         CancellationToken cancellationToken);
 
