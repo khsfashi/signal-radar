@@ -66,4 +66,48 @@ public sealed class RuleBasedArticleAssessmentPolicyTests
         Assert.True(
             assessment.Topics.HasFlag(ArticleTopic.DeveloperTools));
     }
+
+    [Fact]
+    public void Assess_ClassifiesKoreanMacroeconomyWithoutProfileMigration()
+    {
+        RuleBasedArticleAssessmentPolicy policy = new(
+            ArticleRankingProfile.CreateDefault());
+        DateTimeOffset collectedAt = DateTimeOffset.UtcNow;
+        CollectedArticleCandidate candidate = new(
+            "한국은행 기준금리 동결, 환율과 물가 전망 점검",
+            "https://example.com/bok-rate",
+            "economy - Bank of Korea press releases",
+            collectedAt.AddMinutes(-30));
+
+        ArticleAssessment assessment = policy.Assess(
+            candidate,
+            new Uri(candidate.Url),
+            collectedAt);
+
+        Assert.True(assessment.Topics.HasFlag(ArticleTopic.Economy));
+        Assert.Equal(ArticleTopic.Economy, assessment.PrimaryTopic);
+        Assert.True(assessment.TopicInterest >= 65);
+    }
+
+    [Fact]
+    public void Assess_ClassifiesKoreanStockMarketWithoutProfileMigration()
+    {
+        RuleBasedArticleAssessmentPolicy policy = new(
+            ArticleRankingProfile.CreateDefault());
+        DateTimeOffset collectedAt = DateTimeOffset.UtcNow;
+        CollectedArticleCandidate candidate = new(
+            "코스피 상승 마감, 반도체 주가 강세",
+            "https://example.com/kospi-close",
+            "stock market korea - Google News",
+            collectedAt.AddMinutes(-20));
+
+        ArticleAssessment assessment = policy.Assess(
+            candidate,
+            new Uri(candidate.Url),
+            collectedAt);
+
+        Assert.True(assessment.Topics.HasFlag(ArticleTopic.Markets));
+        Assert.Equal(ArticleTopic.Markets, assessment.PrimaryTopic);
+        Assert.True(assessment.TopicInterest >= 70);
+    }
 }
