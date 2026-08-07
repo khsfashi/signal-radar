@@ -438,11 +438,16 @@ try
             log);
         PostgresFeedSourceAdministrationStore feedAdministrationStore = new(dataSource);
         PostgresDiscordTopicRouteStore topicRouteStore = new(dataSource);
+        PostgresArticleReclassificationService reclassificationService = new(
+            dataSource,
+            assessmentPolicy,
+            timeProvider);
         DiscordManagementCommandHandler managementCommandHandler = new(
             discordOptions,
             feedAdministrationStore,
             topicRouteStore,
             sourcePreferenceStore,
+            reclassificationService,
             log);
 
         discordGateway = new DiscordInboxGateway(
