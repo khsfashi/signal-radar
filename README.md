@@ -13,6 +13,11 @@ Signal Radar is a self-hosted .NET service that turns Discord, RSS/Atom, GitHub 
 
 The core pipeline does **not** depend on an LLM. Collection, deduplication, classification, ranking, feedback, saved articles, automatic publishing, and digests continue to work when every summary provider is disabled.
 
+<p align="center">
+  <img src="docs/assets/discord-briefing.png" alt="Signal Radar automatically publishing a translated batch of game-development news in Discord" width="620">
+</p>
+<p align="center"><sub>Signal Radar running in Discord — topic-batched delivery with translated titles, preserved source attribution, and deterministic scores.</sub></p>
+
 ## Why Signal Radar exists
 
 Many personal news bots make a provider call during ingestion and treat generated text as the workflow itself. Signal Radar takes the opposite approach: preserve deterministic source data first, then use generative analysis only when it adds value.
@@ -113,6 +118,11 @@ See [Architecture](docs/architecture.md) for the detailed flows and dependency b
 | Feed / route administration | Private command response | Runtime source and destination management |
 | Source mute / unmute | Private | Per-user source filtering for personal reads |
 | `/reclassify` | Admin / manager | Re-evaluate stored article assessments in bounded batches |
+
+<p align="center">
+  <img src="docs/assets/discord-help.png" alt="Signal Radar Discord help showing private reading, source preferences, feed and route administration, reclassification, digest, and status commands" width="460">
+</p>
+<p align="center"><sub>The in-Discord help surface exposes personal reading, source preferences, runtime feed/route administration, reclassification, digest, and operational status workflows.</sub></p>
 
 Runtime routes are normally managed from Discord. Legacy/bootstrap `DISCORD_TOPIC_CHANNELS` configuration remains supported.
 
