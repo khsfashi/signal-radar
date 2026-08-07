@@ -1,0 +1,52 @@
+name: create-v0.1.0-release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/create-v0.1.0-release.yml
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Create v0.1.0 release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TARGET: 6292fc34085167cbe56b21eced43ab5a62e2f606
+        run: |
+          if gh release view v0.1.0 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "v0.1.0 already exists; nothing to do."
+            exit 0
+          fi
+
+          cat > "$RUNNER_TEMP/release-notes.md" <<'EOF'
+          ## Signal Radar v0.1.0
+
+          First public portfolio release of Signal Radar: a self-hosted, deterministic technology-intelligence pipeline with PostgreSQL as the source of truth and Discord as the primary reading and interaction surface.
+
+          ### Highlights
+
+          - Collects allow-listed Discord messages, RSS/Atom feeds, GitHub Releases, and Hacker News.
+          - Canonicalizes and deduplicates articles before deterministic multi-label classification and ranking.
+          - Keeps LLM calls out of ingestion and ranking; OpenAI Responses and Gemini summaries are optional downstream features.
+          - Publishes topic-batched Discord briefings with persistent delivery receipts and optional cached self-hosted title translation.
+          - Supports private ranked reads, search, saved articles, Markdown export, source muting, digests, status, runtime feed/route management, and bounded reclassification.
+          - Uses PostgreSQL-backed constraints, leases, checksum-verified migrations, and bounded network/retrieval policies.
+          - Ships a non-root, read-only production container and Docker Compose deployment with PostgreSQL and LibreTranslate.
+          - Validated by strict .NET 10 Release builds, PostgreSQL 17 integration tests, production Docker image builds, and full-history Gitleaks scanning.
+
+          The README includes sanitized captures of the real Discord automatic-briefing and command surfaces.
+          EOF
+
+          gh release create v0.1.0 \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$RELEASE_TARGET" \
+            --title "Signal Radar v0.1.0" \
+            --notes-file "$RUNNER_TEMP/release-notes.md"
