@@ -270,6 +270,7 @@ public sealed class DiscordArticleInteractionHandler
         int limit = GetIntegerOption(command, "limit", DefaultDisplayLimit);
         ArticleTopic topic = DiscordArticleInteractionCodec.ParseTopic(
             GetStringOption(command, "topic"));
+        await command.DeferAsync(ephemeral: true).ConfigureAwait(false);
         IReadOnlyList<RankedArticle> articles = await _service.GetTopAsync(
             command.User.Id,
             days,
@@ -291,6 +292,7 @@ public sealed class DiscordArticleInteractionHandler
         int limit = GetIntegerOption(command, "limit", DefaultDisplayLimit);
         ArticleTopic topic = DiscordArticleInteractionCodec.ParseTopic(
             GetStringOption(command, "topic"));
+        await command.DeferAsync(ephemeral: true).ConfigureAwait(false);
         IReadOnlyList<RankedArticle> articles = await _service.SearchAsync(
             command.User.Id,
             searchText,
@@ -312,6 +314,7 @@ public sealed class DiscordArticleInteractionHandler
         int limit = GetIntegerOption(command, "limit", DefaultDisplayLimit);
         ArticleTopic topic = DiscordArticleInteractionCodec.ParseTopic(
             GetStringOption(command, "topic"));
+        await command.DeferAsync(ephemeral: true).ConfigureAwait(false);
         IReadOnlyList<SavedArticle> articles = await _service.GetSavedAsync(
             command.User.Id,
             days,
@@ -332,6 +335,7 @@ public sealed class DiscordArticleInteractionHandler
         int limit = GetIntegerOption(command, "limit", DefaultExportLimit);
         ArticleTopic topic = DiscordArticleInteractionCodec.ParseTopic(
             GetStringOption(command, "topic"));
+        await command.DeferAsync(ephemeral: true).ConfigureAwait(false);
         ArticleMarkdownExport export = await _service.ExportSavedAsync(
             command.User.Id,
             days,
@@ -341,7 +345,7 @@ public sealed class DiscordArticleInteractionHandler
 
         if (export.ArticleCount == 0)
         {
-            await command.RespondAsync(
+            await command.FollowupAsync(
                 "내보낼 저장 기사가 없습니다.",
                 ephemeral: true).ConfigureAwait(false);
             return;
@@ -349,7 +353,7 @@ public sealed class DiscordArticleInteractionHandler
 
         byte[] bytes = Encoding.UTF8.GetBytes(export.Content);
         using MemoryStream stream = new(bytes, writable: false);
-        await command.RespondWithFileAsync(
+        await command.FollowupWithFileAsync(
             stream,
             export.FileName,
             text: $"저장 기사 {export.ArticleCount}건을 Markdown으로 내보냈습니다.",
@@ -405,13 +409,14 @@ public sealed class DiscordArticleInteractionHandler
         int limit = GetIntegerOption(command, "limit", DefaultDigestLimit);
         ArticleTopic topic = DiscordArticleInteractionCodec.ParseTopic(
             GetStringOption(command, "topic"));
+        await command.DeferAsync(ephemeral: true).ConfigureAwait(false);
         ArticleDigest digest = await useCase.GenerateAsync(
             DiscordArticleInteractionCodec.CreateActorId(command.User.Id),
             period,
             topic,
             limit,
             CancellationToken.None).ConfigureAwait(false);
-        await command.RespondAsync(
+        await command.FollowupAsync(
             DiscordDigestMessageFactory.GetHeading(digest),
             embed: DiscordDigestMessageFactory.BuildEmbed(digest),
             ephemeral: true,
@@ -422,6 +427,7 @@ public sealed class DiscordArticleInteractionHandler
     {
         ISignalRadarStatusReader reader = _statusReader
             ?? throw new InvalidOperationException("Status reporting is not configured.");
+        await command.DeferAsync(ephemeral: true).ConfigureAwait(false);
         SignalRadarStatusSnapshot status = await reader.ReadAsync(
             CancellationToken.None).ConfigureAwait(false);
         TimeSpan uptime = status.CheckedAt - status.StartedAt;
@@ -446,7 +452,7 @@ public sealed class DiscordArticleInteractionHandler
                 $"최근 수집: {status.LatestCollectedAt.Value:yyyy-MM-dd HH:mm:ss} UTC"));
         }
 
-        await command.RespondAsync(
+        await command.FollowupAsync(
             embed: builder.Build(),
             ephemeral: true,
             allowedMentions: AllowedMentions.None).ConfigureAwait(false);
@@ -459,7 +465,7 @@ public sealed class DiscordArticleInteractionHandler
     {
         if (articles.Count == 0)
         {
-            await command.RespondAsync(
+            await command.FollowupAsync(
                 $"{heading}\n조건에 맞는 기사가 없습니다.",
                 ephemeral: true).ConfigureAwait(false);
             return;
@@ -481,7 +487,7 @@ public sealed class DiscordArticleInteractionHandler
                 DiscordArticleSaveAction.Add);
         }
 
-        await command.RespondAsync(
+        await command.FollowupAsync(
             $"{heading} · {articles.Count}건",
             embeds: embeds,
             ephemeral: true,
@@ -496,7 +502,7 @@ public sealed class DiscordArticleInteractionHandler
     {
         if (articles.Count == 0)
         {
-            await command.RespondAsync(
+            await command.FollowupAsync(
                 $"{heading}\n저장한 기사가 없습니다.",
                 ephemeral: true).ConfigureAwait(false);
             return;
@@ -518,7 +524,7 @@ public sealed class DiscordArticleInteractionHandler
                 DiscordArticleSaveAction.Remove);
         }
 
-        await command.RespondAsync(
+        await command.FollowupAsync(
             $"{heading} · {articles.Count}건",
             embeds: embeds,
             ephemeral: true,
