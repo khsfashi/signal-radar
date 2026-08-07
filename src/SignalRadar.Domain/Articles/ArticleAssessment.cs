@@ -11,7 +11,9 @@ public enum ArticleTopic
     Research = 1 << 4,
     Business = 1 << 5,
     Security = 1 << 6,
-    Other = 1 << 7
+    Other = 1 << 7,
+    Economy = 1 << 8,
+    Markets = 1 << 9
 }
 
 public sealed class ArticleAssessment
@@ -24,7 +26,9 @@ public sealed class ArticleAssessment
         | ArticleTopic.Research
         | ArticleTopic.Business
         | ArticleTopic.Security
-        | ArticleTopic.Other;
+        | ArticleTopic.Other
+        | ArticleTopic.Economy
+        | ArticleTopic.Markets;
 
     public static ArticleAssessment Unclassified { get; } = new(
         ArticleTopic.Other,
