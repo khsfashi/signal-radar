@@ -114,7 +114,8 @@ public sealed class DiscordHelpCommandHandler
                 "관리자 · 채널 라우팅",
                 "`/route-set` 주제 → 채널, 배치 주기, 최소 점수 설정\n"
                     + "`/route-list` 현재 런타임 라우트 확인\n"
-                    + "`/route-remove` 런타임 라우트 삭제",
+                    + "`/route-remove` 런타임 라우트 삭제\n"
+                    + "`/reclassify` 기존 기사를 현재 랭킹·주제 규칙으로 재평가",
                 inline: false);
 
         List<string> optionalCommands = [];
