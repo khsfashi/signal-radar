@@ -13,6 +13,32 @@ public sealed class PostgresDiscordTopicRouteStore : IDiscordTopicRouteStore
         _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
     }
 
+    public async ValueTask<DateTimeOffset> GetOrCreateBatchActivationTimeAsync(
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            INSERT INTO discord_topic_batch_state (singleton, activated_at)
+            VALUES (TRUE, $1)
+            ON CONFLICT (singleton) DO UPDATE
+            SET activated_at = discord_topic_batch_state.activated_at
+            RETURNING activated_at;
+            """;
+        await using NpgsqlCommand command = _dataSource.CreateCommand(sql);
+        command.Parameters.AddWithValue(now.ToUniversalTime());
+        object? value = await command.ExecuteScalarAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return value switch
+        {
+            DateTimeOffset activatedAt => activatedAt,
+            DateTime activatedAt => new DateTimeOffset(
+                DateTime.SpecifyKind(activatedAt, DateTimeKind.Utc)),
+            _ => throw new InvalidDataException(
+                "Discord topic batch activation time was not returned.")
+        };
+    }
+
     public async ValueTask<IReadOnlyList<ManagedDiscordTopicRoute>> GetAllAsync(
         CancellationToken cancellationToken)
     {
