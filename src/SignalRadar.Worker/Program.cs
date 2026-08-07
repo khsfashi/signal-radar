@@ -4,6 +4,7 @@ using SignalRadar.Infrastructure.Articles;
 using SignalRadar.Infrastructure.Database;
 using SignalRadar.Infrastructure.Operations;
 using SignalRadar.Infrastructure.Ranking;
+using SignalRadar.Worker.Operations;
 using SignalRadar.Worker.Runtime;
 using SignalRadar.Worker.Summaries;
 
