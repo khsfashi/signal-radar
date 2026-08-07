@@ -52,6 +52,16 @@ Each `(article, channel, publication kind)` has a PostgreSQL receipt. Expiring l
 
 Discord delivery and PostgreSQL receipt completion are separate network operations. A Worker crash after Discord accepts a message but before the receipt is completed can therefore produce a rare duplicate after lease expiry. The design otherwise provides durable at-least-once processing with completed-delivery deduplication.
 
+## Apply locally
+
+After changing `.env`, rebuild and recreate the Worker so the new configuration and migration are applied:
+
+```powershell
+git pull origin main
+docker compose up -d --build --force-recreate worker
+docker compose logs --tail=200 worker
+```
+
 ## Commands
 
 `/help` explains which features are public and which are private. Automatic publications include `관심`, `별로`, `저장`, and `숨김` buttons. The article message stays public; each button confirmation is ephemeral.
