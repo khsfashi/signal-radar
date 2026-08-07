@@ -1,48 +1,153 @@
 # Signal Radar
 
-Signal Radar is a personal technology-intelligence pipeline for collecting, normalizing, deduplicating, classifying, ranking, and publishing AI, game-industry, game-development, and software-development news.
+[![CI](https://github.com/khsfashi/signal-radar/actions/workflows/ci.yml/badge.svg)](https://github.com/khsfashi/signal-radar/actions/workflows/ci.yml)
+[![Gitleaks](https://github.com/khsfashi/signal-radar/actions/workflows/gitleaks.yml/badge.svg)](https://github.com/khsfashi/signal-radar/actions/workflows/gitleaks.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Discord is the primary inbox and reading surface. PostgreSQL is the source of truth, and LLM summarization is optional rather than part of ingestion.
+**A deterministic technology-intelligence pipeline for collecting, ranking, and delivering high-signal AI, game-industry, game-development, software-development, economy, and market news.**
+
+> Collect → normalize → deduplicate → rank → persist → deliver.  
+> Optional LLM summarization stays downstream.
+
+Signal Radar is a self-hosted .NET service that turns Discord, RSS/Atom, GitHub Releases, and Hacker News into a durable personal news radar. PostgreSQL is the source of truth and Discord is the primary reading and interaction surface.
+
+The core pipeline does **not** depend on an LLM. Collection, deduplication, classification, ranking, feedback, saved articles, automatic publishing, and digests continue to work when every summary provider is disabled.
+
+## Why Signal Radar exists
+
+Many personal news bots make a provider call during ingestion and treat generated text as the workflow itself. Signal Radar takes the opposite approach: preserve deterministic source data first, then use generative analysis only when it adds value.
+
+| Problem | Design choice | Result |
+| --- | --- | --- |
+| The same story arrives through multiple sources | Canonical URL normalization plus stable `(source, external_id)` identity | One durable article corpus instead of repeated posts |
+| LLM availability, cost, or model changes should not break collection | Deterministic ingestion, classification, and ranking | The radar remains useful with `SUMMARY_PROVIDER=disabled` |
+| Discord is convenient UI but poor canonical storage | PostgreSQL is the source of truth | Restarts do not lose ranking, feedback, saves, leases, or delivery state |
+| Network and process failures happen around external delivery | Persistent receipts plus expiring ownership leases | Retryable delivery with completed-send deduplication |
+| Retrieved article HTML is untrusted | Robots-aware, bounded, public-network-only retrieval by default | Optional summaries without turning ingestion into a crawler |
+
+## System overview
+
+```mermaid
+flowchart LR
+    Sources["Discord<br/>RSS / Atom<br/>GitHub Releases<br/>Hacker News"]
+    Collect["Bounded collection"]
+    Normalize["Normalize + deduplicate"]
+    Rank["Classify + deterministic rank"]
+    DB[(PostgreSQL)]
+    Discord["Discord<br/>private reads<br/>public topic batches<br/>scheduled digests"]
+    Summary["Optional summaries<br/>OpenAI / Gemini"]
+    Export["Markdown export"]
+
+    Sources --> Collect --> Normalize --> Rank --> DB
+    DB --> Discord
+    DB --> Summary --> Discord
+    DB --> Export
+```
+
+The repository keeps domain rules and application use cases independent from Discord, PostgreSQL, HTTP parsers, and provider adapters:
+
+```text
+Domain <- Application <- Infrastructure
+                     <- Bot
+                     <- Worker
+```
+
+See [Architecture](docs/architecture.md) for the detailed flows and dependency boundaries.
+
+## Engineering highlights
+
+- **Deterministic core** — LLM calls are never part of ingestion or ranking.
+- **Inspectable ranking** — topic classification and score components are persisted with ranking-profile versions instead of being hidden inside prompts.
+- **Durable concurrency** — PostgreSQL constraints, advisory-locked migrations, expiring leases, and `FOR UPDATE SKIP LOCKED` claims coordinate workers safely.
+- **Idempotent delivery model** — scheduled digests, Discord ingestion, source polling, and public topic publishing keep persistent receipts or leases.
+- **Bounded retrieval** — article extraction validates public targets and redirects, honors robots rules, rejects unsupported content types, and caps bytes, duration, redirects, concurrency, extracted text, and prompt input.
+- **Deterministic caches** — normalized article text and structured summaries use SHA-256 identities; immutable summary-cache writes tolerate races.
+- **Production-oriented container** — multi-stage build, non-root runtime, read-only root filesystem, `tmpfs`, `no-new-privileges`, health check, graceful cancellation, bounded logs, and secret redaction.
+- **Strict builds** — nullable analysis, warnings-as-errors, latest analyzers, code-style enforcement, and deterministic CI builds are enabled centrally.
+- **Real integration testing** — CI starts PostgreSQL 17, runs the full Release test suite, collects coverage, builds the production Docker image, and separately scans reachable Git history with Gitleaks.
 
 ## What it does
 
-- Receives articles from allow-listed Discord guilds, channels, and optionally authors.
-- Polls configured RSS/Atom feeds, GitHub Releases, and Hacker News.
-- Canonicalizes URLs and deduplicates by canonical URL plus stable `(source, external_id)` identity.
-- Classifies articles into deterministic multi-label topics and inspectable score components.
-- Exposes private Discord `/top`, `/search`, `/saved`, `/export`, `/summarize`, `/digest`, `/status`, and `/help` workflows.
-- Stores interested, not-interested, hidden, and saved state per Discord actor.
-- Automatically publishes newly collected high-scoring articles to configured public Discord channels or Forum posts.
-- Sends optional public daily and weekly Discord digests with PostgreSQL delivery receipts.
-- Exports up to 100 saved links as provider-neutral UTF-8 Markdown.
-- Supports optional OpenAI Responses and Gemini Generate Content structured summaries.
-- Retrieves bounded HTML excerpts only for explicit summary requests.
-- Honors robots rules, validates redirects, rejects private-network targets, and limits content type, size, time, concurrency, and prompt length.
-- Caches normalized article text and structured summaries with deterministic SHA-256 identities.
-- Runs ordered checksum-verified PostgreSQL migrations under an advisory lock.
-- Provides a non-root, read-only production container and Docker health check.
-- Builds, tests, runs PostgreSQL integration tests, and validates the production container in GitHub Actions.
+### Collect and normalize
 
-LLM calls are never part of ingestion. Collection, deduplication, classification, ranking, feedback, saved articles, automatic publishing, and digests remain available when every summary provider is disabled.
+- Ingests allow-listed Discord messages and embeds.
+- Polls RSS/Atom feeds, GitHub Releases, and Hacker News.
+- Tracks source health, validators, retries, leases, and quarantine state.
+- Canonicalizes URLs and deduplicates by URL plus stable external identity.
+- Supports runtime RSS/Atom feed administration from Discord.
 
-## Quick start on Windows
+### Rank and personalize
 
-Requirements:
+- Applies deterministic multi-label topic classification.
+- Persists source-trust, topic-interest, practical-impact, freshness, and effective ranking data.
+- Stores interested, not-interested, hidden, saved, and source-muted state per Discord actor.
+- Reclassifies existing articles with the current ranking/topic policy through an admin workflow without rewriting article identity or completed delivery receipts.
 
-- Windows with CPU virtualization enabled
-- WSL 2 / Virtual Machine Platform
-- Docker Desktop using the WSL 2 engine
+### Deliver and read
+
+- Publishes newly collected qualifying articles to configured Discord text, announcement, or Forum destinations.
+- Batches public topic delivery instead of posting one message per article.
+- Optionally translates titles through the bundled self-hosted LibreTranslate service with PostgreSQL caching and fallback to the original title.
+- Provides private `/top`, `/search`, `/saved`, `/export`, `/digest`, `/status`, and `/help` workflows.
+- Sends optional public daily and weekly digests with persistent delivery receipts.
+- Exports saved links as provider-neutral UTF-8 Markdown.
+
+### Summarize only when requested
+
+- Supports OpenAI Responses and Gemini Generate Content behind one application contract.
+- Registers `/summarize` only when a provider is configured.
+- Retrieves bounded article excerpts only for explicit summary requests.
+- Treats article text as untrusted source material rather than an instruction channel.
+- Validates structured provider output locally before caching and rendering it.
+
+## Discord surface
+
+| Workflow | Visibility | Purpose |
+| --- | --- | --- |
+| `/top`, `/search`, `/saved`, `/export` | Private | Ranked reading, search, saved list, and export |
+| `/digest`, `/status`, `/help` | Private | On-demand digest, operational status, command guide |
+| `/summarize` | Private | Optional structured AI briefing |
+| `관심`, `별로`, `저장`, `숨김` | Private confirmation | Per-user feedback and saved state |
+| Automatic topic publishing | Public | New high-scoring articles by topic route |
+| Scheduled daily / weekly digest | Public | Shared ranked digest |
+| Feed / route administration | Private command response | Runtime source and destination management |
+| Source mute / unmute | Private | Per-user source filtering for personal reads |
+| `/reclassify` | Admin / manager | Re-evaluate stored article assessments in bounded batches |
+
+Runtime routes are normally managed from Discord. Legacy/bootstrap `DISCORD_TOPIC_CHANNELS` configuration remains supported.
+
+See [Discord interactions](docs/discord-interactions.md) and [Automatic topic publishing](docs/automatic-topic-publishing.md).
+
+## Technology
+
+| Area | Choice |
+| --- | --- |
+| Runtime | .NET 10 / C# |
+| Persistence | PostgreSQL 17 |
+| Discord | Discord.Net adapter behind application boundaries |
+| Parsing | bounded HTTP + XML/JSON/HTML parsing |
+| Translation | self-hosted LibreTranslate, optional at runtime |
+| AI summaries | optional OpenAI Responses or Gemini Generate Content |
+| Deployment | Docker / Docker Compose |
+| CI | GitHub Actions, PostgreSQL integration tests, production image build |
+| Supply-chain hygiene | Dependabot + full-history Gitleaks workflow |
+
+## Quick start with Docker Compose
+
+### Requirements
+
+- Windows with WSL 2 / Virtual Machine Platform and Docker Desktop using the WSL 2 engine, or another Docker-capable host
 - Git
 - A Discord application and bot already invited to the target server
 
-Clone the repository and enter it:
+Clone the repository:
 
 ```powershell
 git clone https://github.com/khsfashi/signal-radar.git
 Set-Location signal-radar
 ```
 
-Create local configuration files:
+Create local configuration:
 
 ```powershell
 Copy-Item .env.example .env
@@ -51,201 +156,42 @@ Copy-Item config\github-repositories.starter.json config\github-repositories.jso
 Copy-Item config\ranking-profile.example.json config\ranking-profile.json
 ```
 
-Replace every example password, Discord ID, and token in `.env`. Production mode intentionally rejects placeholder secrets such as `replace-me` and `change-me`.
+Replace every example password, Discord ID, and token in `.env`. Production startup intentionally rejects placeholder secrets such as `replace-me` and `change-me`.
 
-Validate Compose configuration without printing resolved secrets:
+Validate Compose without printing resolved secrets, then start the stack:
 
 ```powershell
 docker compose config --quiet
-```
-
-Build and start PostgreSQL and the Worker:
-
-```powershell
 docker compose up -d --build
 docker compose ps
 docker compose logs --tail=200 worker
 ```
 
-A healthy startup includes messages similar to:
+The default stack runs PostgreSQL, LibreTranslate, and the Signal Radar Worker. PostgreSQL remains internal to the Compose network unless the explicit development override is used.
+
+A healthy Worker startup includes messages similar to:
 
 ```text
 PostgreSQL migrations and startup health check completed.
 Discord inbox gateway started.
 Discord commands synchronized for guild ...
-Discord /help command synchronized.
 Gateway Ready
 ```
 
-Useful commands:
+Do **not** run `docker compose down -v` unless you intentionally want to delete the PostgreSQL volume and all Signal Radar data.
 
-```powershell
-# Current container state
-docker compose ps
+For the complete Korean walkthrough, see [Discord 실제 적용 가이드](docs/discord-setup-ko.md). For backup and recovery procedures, see [운영·백업·복구 가이드](docs/operations-ko.md).
 
-# Recent Worker logs
-docker compose logs --tail=200 worker
-
-# Follow Worker logs
-docker compose logs -f worker
-
-# Recreate Worker after changing .env
-docker compose up -d --force-recreate worker
-
-# Rebuild after pulling new code
-docker compose up -d --build --force-recreate worker
-
-# Stop / start without deleting data
-docker compose stop
-docker compose start
-```
-
-Do not use `docker compose down -v` unless you intentionally want to delete the PostgreSQL volume and all Signal Radar data.
-
-For the complete Korean installation walkthrough, see [Discord 실제 적용 가이드](docs/discord-setup-ko.md). For backups and recovery, see [운영·백업·복구 가이드](docs/operations-ko.md).
-
-## Discord visibility model
-
-Signal Radar deliberately separates personal query results from shared channel output.
-
-| Feature | Visibility |
-| --- | --- |
-| `/top`, `/search`, `/saved`, `/export` | Private to the command user |
-| `/summarize`, `/digest`, `/status`, `/help` | Private to the command user |
-| Feedback/save confirmations | Private to the user who clicked |
-| Scheduled daily/weekly digest | Public channel message |
-| Automatic topic publication | Public channel message or public Forum post |
-
-An automatically published article remains visible to everyone who can view the destination channel. Its `관심`, `별로`, `저장`, and `숨김` buttons can still be used independently by each Discord user; the confirmation response is private.
-
-## Discord commands
-
-The bot synchronizes guild-scoped commands after the Discord Gateway reaches Ready.
-
-```text
-/help       command guide and public/private visibility explanation
-/top        ranked recent articles
-/search     title and source search
-/saved      personal reading list
-/export     saved links as Markdown
-/summarize  optional structured AI briefing
-/digest     daily or weekly ranked digest on demand
-/status     DB, collection, cache, provider, and scheduler status
-```
-
-`/summarize` is registered only when a summary provider is configured. Commands and buttons work only in configured guilds and channels.
-
-See [Discord interactions](docs/discord-interactions.md) and [Discord 실제 적용 가이드](docs/discord-setup-ko.md).
-
-## Automatic public topic publishing
-
-Automatic topic publishing removes the need to manually run `/top` just to discover new high-scoring articles. The Worker periodically looks for newly collected articles, applies the configured score threshold, routes each article by primary topic, and posts qualifying articles as normal public Discord content.
-
-Enable it in `.env`:
-
-```env
-DISCORD_TOPIC_PUBLISHING_ENABLED=true
-
-# Every automatic destination must also be allow-listed.
-DISCORD_ALLOWED_CHANNEL_IDS=111111111111111111
-
-# Several topics may share the same destination channel.
-DISCORD_TOPIC_CHANNELS=ai:111111111111111111,game-industry:111111111111111111,game-development:111111111111111111,developer-tools:111111111111111111,research:111111111111111111,business:111111111111111111,security:111111111111111111,other:111111111111111111
-
-DISCORD_TOPIC_MIN_SCORE=60
-DISCORD_TOPIC_BATCH_SIZE=10
-DISCORD_TOPIC_POLL_SECONDS=30
-DISCORD_TOPIC_LEASE_SECONDS=120
-DISCORD_TOPIC_RETRY_SECONDS=60
-```
-
-Supported route keys are exactly:
-
-```text
-ai
-game-industry
-game-development
-developer-tools
-research
-business
-security
-other
-```
-
-Each route uses `topic:channelId`. A topic may be configured only once, while multiple topics may point to the same channel.
-
-Text and announcement destinations receive ordinary public messages. Forum destinations receive public Forum posts. The bot therefore needs permission to send messages in text destinations and to create public threads/posts in Forum destinations.
-
-The first time automatic publishing is enabled, Signal Radar persists an activation timestamp. Articles collected before that timestamp are not backfilled, preventing an existing archive from flooding Discord. Articles collected after activation remain eligible across Worker restarts.
-
-Each `(article, channel, publication kind)` is tracked with a PostgreSQL delivery receipt and lease. Completed deliveries are suppressed on later polling cycles; failed deliveries become retryable after `DISCORD_TOPIC_RETRY_SECONDS`.
-
-Discord delivery and PostgreSQL receipt completion are separate network operations, so a process crash in the narrow interval after Discord accepts a post but before the receipt commit can produce a rare duplicate after lease expiry.
-
-See [Automatic Discord topic publishing](docs/automatic-topic-publishing.md).
-
-## Summary providers
-
-Disable summaries completely:
-
-```env
-SUMMARY_PROVIDER=disabled
-```
-
-OpenAI Responses:
-
-```env
-SUMMARY_PROVIDER=openai-responses
-OPENAI_API_KEY=replace-with-real-key
-OPENAI_SUMMARY_MODEL=your-model-id
-OPENAI_RESPONSES_ENDPOINT=https://api.openai.com/v1/responses
-```
-
-Gemini Generate Content:
-
-```env
-SUMMARY_PROVIDER=gemini-generate-content
-GEMINI_API_KEY=replace-with-real-key
-GEMINI_SUMMARY_MODEL=gemini-3.6-flash
-```
-
-Both adapters implement the same application interface, request JSON-schema-constrained output, and pass results through local validation before caching.
-
-Before a provider call, the article reader downloads only explicitly requested saved URLs. It does not execute JavaScript, use login cookies, bypass paywalls, or crawl discovered links. Failed retrievals fall back to metadata without failing the entire summary.
-
-See [Structured summaries](docs/summaries.md).
-
-## Scheduled public digests
-
-Example Seoul-time schedule:
-
-```env
-DIGEST_DAILY_ENABLED=true
-DIGEST_DAILY_TIME=08:00
-DIGEST_WEEKLY_ENABLED=true
-DIGEST_WEEKLY_DAY=Monday
-DIGEST_WEEKLY_TIME=08:00
-DIGEST_TIME_ZONE=Asia/Seoul
-DIGEST_CHANNEL_ID=234567890123456789
-DIGEST_ACTOR_USER_ID=345678901234567890
-DIGEST_TOPIC=all
-DIGEST_LIMIT=10
-```
-
-The actor user ID applies that user's hidden and feedback state to ranking. The destination channel must also appear in `DISCORD_ALLOWED_CHANNEL_IDS`. Completed scheduled deliveries are protected by persistent receipts; failed leases can be retried.
-
-The manual `/digest` command remains private to the user who invokes it. Scheduled digest delivery is public.
-
-## Local .NET start
-
-Start PostgreSQL, prepare the same configuration files, and export the variables from `.env` into the operating-system environment. The .NET process does not automatically load `.env`.
+## Local development
 
 ```bash
 dotnet restore SignalRadar.sln
-dotnet build SignalRadar.sln --configuration Release
+dotnet build SignalRadar.sln --configuration Release --no-restore
 dotnet test SignalRadar.sln --configuration Release --no-build
 dotnet run --project src/SignalRadar.Worker
 ```
+
+The .NET process does not automatically load `.env`; export the required variables into the operating-system environment when running outside Compose.
 
 Container or local DB-only health check:
 
@@ -253,62 +199,49 @@ Container or local DB-only health check:
 dotnet run --project src/SignalRadar.Worker -- --healthcheck
 ```
 
-## Starter source pack
+The CI workflow runs the Release build and full test suite against a real PostgreSQL 17 service before validating the production container image.
 
-The starter feed file contains official OpenAI, Unreal Engine, Godot, and GitHub feeds. The starter release file contains selected .NET, AI-tooling, and game-engine repositories.
+## Operational guarantees
 
-These files are starting points, not a promise that every source will always keep the same endpoint. One broken feed does not stop other collectors. Source failure and quarantine state is persisted and exposed through operational status.
-
-## Persistence guarantees
+Signal Radar deliberately preserves several invariants in PostgreSQL:
 
 - Canonical article URLs are unique.
-- Stable external items are unique by `(source, external_id)`.
-- Score components and ranking-profile version are preserved.
-- Feedback and saved articles are actor-scoped and independent.
-- Hidden articles are filtered only for the actor who hid them.
-- Article content stores bounded normalized text, status, hash, and diagnostics rather than raw HTML.
+- Stable source items are unique by `(source, external_id)`.
+- Feedback, saved articles, hidden state, and source mutes are actor-scoped.
+- Score components and ranking-profile versions remain inspectable.
+- Article-content cache entries store bounded normalized text rather than raw HTML.
 - Structured summaries are immutable for a deterministic input hash.
-- Scheduled digest deliveries are unique per delivery key and scheduled window.
-- Automatic topic publications use persistent per-article/channel receipts and expiring leases.
-- Discord ingestion receipts and polling sources use expiring tokenized leases.
-- Applied SQL migration checksums are verified on every startup.
+- Scheduled digests and automatic topic publications keep durable delivery state.
+- Discord ingestion and source polling use expiring tokenized leases.
+- SQL migrations are ordered, checksum-verified, and protected by an advisory lock.
 
-## Architecture
-
-```text
-Discord / RSS / Atom / GitHub Releases / Hacker News
-                    │
-                    ▼
-               Collection
-                    │
-                    ▼
-       Normalize + deterministic dedupe
-                    │
-                    ▼
-          Classify + deterministic rank
-                    │
-                    ▼
-               PostgreSQL
-              ┌─────┴─────┐
-              ▼           ▼
-       Discord reading   Public automatic
-       and feedback      topic publishing
-              │
-              ▼
-       Optional summaries / export
-```
-
-The repository keeps Domain, Application, Infrastructure, Bot, and Worker concerns separated. PostgreSQL remains the durable source of truth; Discord is a delivery and interaction surface rather than the canonical database.
+A process crash in the narrow interval after an external service accepts a message but before the corresponding PostgreSQL receipt commit can still produce a rare duplicate after lease expiry. The delivery model is designed around durable at-least-once processing rather than claiming impossible exactly-once delivery across independent systems.
 
 ## Documentation
 
-- [Architecture](docs/architecture.md)
-- [Discord 실제 적용 가이드](docs/discord-setup-ko.md)
-- [Discord interactions](docs/discord-interactions.md)
-- [Automatic Discord topic publishing](docs/automatic-topic-publishing.md)
-- [운영·백업·복구 가이드](docs/operations-ko.md)
-- [Structured summaries](docs/summaries.md)
-- [Feed sources](docs/feed-sources.md)
-- [External sources](docs/external-sources.md)
-- [Ranking and feedback](docs/ranking.md)
-- [Roadmap](docs/roadmap.md)
+| Document | What it covers |
+| --- | --- |
+| [Architecture](docs/architecture.md) | Boundaries, ingestion, personalized reads, summaries, delivery, persistence, security |
+| [Discord setup — Korean](docs/discord-setup-ko.md) | End-to-end Discord installation and configuration |
+| [Discord interactions](docs/discord-interactions.md) | Commands, buttons, visibility, scheduled delivery |
+| [Automatic topic publishing](docs/automatic-topic-publishing.md) | Public routing, batching, receipts, retries |
+| [Operations — Korean](docs/operations-ko.md) | Deployment, backup, recovery, operating procedures |
+| [Structured summaries](docs/summaries.md) | Provider contracts, retrieval, validation, caching |
+| [Feed sources](docs/feed-sources.md) | RSS/Atom source configuration |
+| [External sources](docs/external-sources.md) | GitHub Releases and Hacker News collection |
+| [Ranking and feedback](docs/ranking.md) | Deterministic scoring, topics, feedback |
+| [Roadmap](docs/roadmap.md) | Completed milestones and deliberate next steps |
+| [Contributing](CONTRIBUTING.md) | Local validation and pull-request expectations |
+| [Security](SECURITY.md) | Vulnerability reporting and secret handling |
+
+## Project status
+
+The original v0.1 engineering baseline is complete on `main`: collection, deterministic ranking, PostgreSQL persistence, Discord reading and publishing, optional summaries, digest delivery, production containerization, CI, and operational documentation.
+
+Subsequent mainline work has added title translation, batched public delivery, runtime feed and route management, personal source muting, economy/market classification, bounded article reclassification, runtime hardening, and public-repository hygiene.
+
+See the [Roadmap](docs/roadmap.md) for the intentionally deferred work such as event clustering, novelty scoring, momentum analysis, vector search, and a web dashboard.
+
+## License
+
+Signal Radar is available under the [MIT License](LICENSE).
