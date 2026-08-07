@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../SignalRadar.Application/SignalRadar.Application.csproj" />
+    <ProjectReference Include="../SignalRadar.Domain/SignalRadar.Domain.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="AngleSharp" />
+    <PackageReference Include="Npgsql" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Database/Migrations/*.sql" />
+  </ItemGroup>
+</Project>

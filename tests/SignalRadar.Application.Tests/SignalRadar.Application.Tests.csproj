@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" PrivateAssets="all">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/SignalRadar.Application/SignalRadar.Application.csproj" />
+    <ProjectReference Include="../../src/SignalRadar.Bot/SignalRadar.Bot.csproj" />
+    <ProjectReference Include="../../src/SignalRadar.Infrastructure/SignalRadar.Infrastructure.csproj" />
+    <ProjectReference Include="../../src/SignalRadar.Domain/SignalRadar.Domain.csproj" />
+  </ItemGroup>
+</Project>

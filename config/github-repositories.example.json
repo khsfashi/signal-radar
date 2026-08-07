@@ -1,0 +1,10 @@
+[
+  {
+    "owner": "dotnet",
+    "repository": "runtime",
+    "displayName": ".NET Runtime",
+    "pollIntervalMinutes": 30,
+    "includePrereleases": false,
+    "enabled": true
+  }
+]

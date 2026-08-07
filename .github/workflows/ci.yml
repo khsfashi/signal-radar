@@ -1,0 +1,53 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: signal_radar_test
+          POSTGRES_USER: signal_radar
+          POSTGRES_PASSWORD: signal-radar-test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U signal_radar -d signal_radar_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore SignalRadar.sln
+
+      - name: Build
+        run: dotnet build SignalRadar.sln --configuration Release --no-restore
+
+      - name: Test
+        env:
+          SIGNAL_RADAR_TEST_DATABASE_CONNECTION_STRING: Host=localhost;Port=5432;Database=signal_radar_test;Username=signal_radar;Password=signal-radar-test;Maximum Pool Size=5
+        run: dotnet test SignalRadar.sln --configuration Release --no-build --collect:"XPlat Code Coverage"
+
+      - name: Build production container
+        run: docker build --tag signal-radar:ci .

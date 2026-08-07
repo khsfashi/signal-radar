@@ -1,0 +1,42 @@
+[
+  {
+    "owner": "dotnet",
+    "repository": "runtime",
+    "displayName": ".NET Runtime",
+    "pollIntervalMinutes": 60,
+    "includePrereleases": false,
+    "enabled": true
+  },
+  {
+    "owner": "microsoft",
+    "repository": "semantic-kernel",
+    "displayName": "Semantic Kernel",
+    "pollIntervalMinutes": 60,
+    "includePrereleases": false,
+    "enabled": true
+  },
+  {
+    "owner": "godotengine",
+    "repository": "godot",
+    "displayName": "Godot Engine",
+    "pollIntervalMinutes": 60,
+    "includePrereleases": false,
+    "enabled": true
+  },
+  {
+    "owner": "ollama",
+    "repository": "ollama",
+    "displayName": "Ollama",
+    "pollIntervalMinutes": 60,
+    "includePrereleases": false,
+    "enabled": true
+  },
+  {
+    "owner": "ggml-org",
+    "repository": "llama.cpp",
+    "displayName": "llama.cpp",
+    "pollIntervalMinutes": 60,
+    "includePrereleases": false,
+    "enabled": true
+  }
+]

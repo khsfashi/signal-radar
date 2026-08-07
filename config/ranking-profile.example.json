@@ -1,0 +1,104 @@
+{
+  "version": "personal-v1",
+  "defaultSourceTrust": 55,
+  "defaultTopicInterest": 35,
+  "basePracticalImpact": 35,
+  "sourceTrustRules": [
+    { "contains": "openai", "score": 100 },
+    { "contains": "anthropic", "score": 100 },
+    { "contains": "google", "score": 95 },
+    { "contains": "microsoft", "score": 95 },
+    { "contains": "github", "score": 90 },
+    { "contains": "unreal engine", "score": 95 },
+    { "contains": "unity", "score": 95 },
+    { "contains": "geeknews", "score": 78 },
+    { "contains": "hacker news", "score": 70 }
+  ],
+  "topicInterestRules": [
+    { "topic": "ArtificialIntelligence", "score": 100 },
+    { "topic": "GameIndustry", "score": 90 },
+    { "topic": "GameDevelopment", "score": 95 },
+    { "topic": "DeveloperTools", "score": 85 },
+    { "topic": "Research", "score": 80 },
+    { "topic": "Business", "score": 65 },
+    { "topic": "Security", "score": 70 },
+    { "topic": "Other", "score": 35 }
+  ],
+  "topicRules": [
+    {
+      "topic": "ArtificialIntelligence",
+      "priority": 100,
+      "keywords": [
+        "ai", "artificial intelligence", "llm", "gpt", "openai",
+        "anthropic", "claude", "gemini", "machine learning",
+        "inference", "agentic", "인공지능", "생성형 ai", "언어 모델"
+      ]
+    },
+    {
+      "topic": "GameDevelopment",
+      "priority": 95,
+      "keywords": [
+        "unreal", "ue5", "unity", "godot", "game engine", "shader",
+        "rendering", "graphics", "게임 개발", "게임 엔진", "렌더링"
+      ]
+    },
+    {
+      "topic": "GameIndustry",
+      "priority": 90,
+      "keywords": [
+        "game industry", "gaming", "steam", "nexon", "ncsoft",
+        "krafton", "ubisoft", "electronic arts", "게임업계",
+        "게임 산업", "게임 출시", "게임 매출"
+      ]
+    },
+    {
+      "topic": "DeveloperTools",
+      "priority": 80,
+      "keywords": [
+        "github", ".net", "c#", "compiler", "sdk", "api", "database",
+        "postgres", "docker", "kubernetes", "developer tool",
+        "visual studio", "open source", "개발 도구", "오픈소스"
+      ]
+    },
+    {
+      "topic": "Research",
+      "priority": 70,
+      "keywords": [
+        "paper", "arxiv", "research", "benchmark", "dataset",
+        "논문", "연구", "벤치마크", "데이터셋"
+      ]
+    },
+    {
+      "topic": "Security",
+      "priority": 60,
+      "keywords": [
+        "security", "vulnerability", "cve", "exploit", "breach",
+        "보안", "취약점", "해킹"
+      ]
+    },
+    {
+      "topic": "Business",
+      "priority": 50,
+      "keywords": [
+        "funding", "acquisition", "revenue", "earnings", "ipo",
+        "투자", "인수", "매출", "실적", "상장"
+      ]
+    }
+  ],
+  "impactRules": [
+    { "contains": "release", "weight": 15 },
+    { "contains": "launch", "weight": 15 },
+    { "contains": "breaking change", "weight": 20 },
+    { "contains": "deprecated", "weight": 15 },
+    { "contains": "security", "weight": 20 },
+    { "contains": "vulnerability", "weight": 20 },
+    { "contains": "benchmark", "weight": 10 },
+    { "contains": "open source", "weight": 10 },
+    { "contains": "acquisition", "weight": 15 },
+    { "contains": "출시", "weight": 15 },
+    { "contains": "공개", "weight": 10 },
+    { "contains": "보안", "weight": 20 },
+    { "contains": "취약점", "weight": 20 },
+    { "contains": "서비스 종료", "weight": 20 }
+  ]
+}
