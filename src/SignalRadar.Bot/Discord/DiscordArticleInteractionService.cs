@@ -332,6 +332,8 @@ public static class DiscordArticleInteractionCodec
             "research" => ArticleTopic.Research,
             "business" => ArticleTopic.Business,
             "security" => ArticleTopic.Security,
+            "economy" or "경제" => ArticleTopic.Economy,
+            "markets" or "stocks" or "stock" or "주식" => ArticleTopic.Markets,
             "other" => ArticleTopic.Other,
             _ => throw new ArgumentOutOfRangeException(
                 nameof(value),
@@ -351,6 +353,8 @@ public static class DiscordArticleInteractionCodec
             ArticleTopic.Research => "연구",
             ArticleTopic.Business => "비즈니스",
             ArticleTopic.Security => "보안",
+            ArticleTopic.Economy => "경제",
+            ArticleTopic.Markets => "증시·주식",
             ArticleTopic.Other => "기타",
             _ => "복합 주제"
         };
@@ -363,7 +367,7 @@ public static class DiscordArticleInteractionCodec
             return "없음";
         }
 
-        List<string> labels = new(8);
+        List<string> labels = new(10);
         AddTopicLabel(labels, topics, ArticleTopic.ArtificialIntelligence);
         AddTopicLabel(labels, topics, ArticleTopic.GameIndustry);
         AddTopicLabel(labels, topics, ArticleTopic.GameDevelopment);
@@ -371,6 +375,8 @@ public static class DiscordArticleInteractionCodec
         AddTopicLabel(labels, topics, ArticleTopic.Research);
         AddTopicLabel(labels, topics, ArticleTopic.Business);
         AddTopicLabel(labels, topics, ArticleTopic.Security);
+        AddTopicLabel(labels, topics, ArticleTopic.Economy);
+        AddTopicLabel(labels, topics, ArticleTopic.Markets);
         AddTopicLabel(labels, topics, ArticleTopic.Other);
         return string.Join(", ", labels);
     }
