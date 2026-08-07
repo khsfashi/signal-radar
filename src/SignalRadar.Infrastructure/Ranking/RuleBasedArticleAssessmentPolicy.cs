@@ -34,17 +34,20 @@ public sealed class RuleBasedArticleAssessmentPolicy : IArticleAssessmentPolicy
         ArgumentNullException.ThrowIfNull(candidate);
         ArgumentNullException.ThrowIfNull(canonicalUrl);
 
-        string searchableText = string.Concat(
-            candidate.Title,
-            " ",
+        string sourceIdentityText = string.Concat(
             candidate.Source,
             " ",
             canonicalUrl.Host).ToLowerInvariant();
-        int sourceTrust = CalculateSourceTrust(searchableText);
+        string topicText = string.Concat(
+            candidate.Title,
+            " ",
+            candidate.Source).ToLowerInvariant();
+        string impactText = candidate.Title.ToLowerInvariant();
+        int sourceTrust = CalculateSourceTrust(sourceIdentityText);
         (ArticleTopic topics, ArticleTopic primaryTopic) = ClassifyTopics(
-            searchableText);
+            topicText);
         int topicInterest = CalculateTopicInterest(topics);
-        int practicalImpact = CalculatePracticalImpact(searchableText);
+        int practicalImpact = CalculatePracticalImpact(impactText);
         int freshness = CalculateFreshness(candidate.PublishedAt, collectedAt);
         decimal baseScore =
             sourceTrust * 0.30m
