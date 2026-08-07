@@ -3,6 +3,7 @@ using Discord;
 using Discord.WebSocket;
 using SignalRadar.Application.Digests;
 using SignalRadar.Application.Publishing;
+using SignalRadar.Domain.Articles;
 
 namespace SignalRadar.Bot.Discord;
 
@@ -52,6 +53,7 @@ public sealed class DiscordInboxGateway : IDisposable
     private readonly DiscordSocketMessageMapper _mapper;
     private readonly DiscordArticleInteractionHandler? _interactionHandler;
     private readonly DiscordHelpCommandHandler? _helpCommandHandler;
+    private readonly DiscordManagementCommandHandler? _managementCommandHandler;
     private readonly DiscordSocketClient _client;
     private readonly Action<string> _log;
     private readonly TaskCompletionSource<bool> _ready = new(
@@ -64,13 +66,15 @@ public sealed class DiscordInboxGateway : IDisposable
         DiscordSocketMessageMapper mapper,
         Action<string>? log = null,
         DiscordArticleInteractionHandler? interactionHandler = null,
-        DiscordHelpCommandHandler? helpCommandHandler = null)
+        DiscordHelpCommandHandler? helpCommandHandler = null,
+        DiscordManagementCommandHandler? managementCommandHandler = null)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _processor = processor ?? throw new ArgumentNullException(nameof(processor));
         _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
         _interactionHandler = interactionHandler;
         _helpCommandHandler = helpCommandHandler;
+        _managementCommandHandler = managementCommandHandler;
         _log = log ?? (static _ => { });
 
         _client = new DiscordSocketClient(new DiscordSocketConfig
@@ -85,7 +89,9 @@ public sealed class DiscordInboxGateway : IDisposable
         _client.Ready += HandleReadyAsync;
         _client.MessageReceived += HandleMessageAsync;
 
-        if (_interactionHandler is not null || _helpCommandHandler is not null)
+        if (_interactionHandler is not null
+            || _helpCommandHandler is not null
+            || _managementCommandHandler is not null)
         {
             _client.SlashCommandExecuted += HandleSlashCommandAsync;
         }
@@ -205,6 +211,72 @@ public sealed class DiscordInboxGateway : IDisposable
         return message.Id;
     }
 
+    public async ValueTask<ulong> SendAutomaticTopicBatchAsync(
+        ulong channelId,
+        ArticleTopic topic,
+        IReadOnlyList<AutomaticTopicPublicationCandidate> articles,
+        TimeSpan batchWindow,
+        DateTimeOffset createdAt,
+        CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(articles);
+
+        if (articles.Count == 0)
+        {
+            throw new ArgumentException("A batch must contain at least one article.", nameof(articles));
+        }
+
+        await _ready.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        SocketChannel channel = _client.GetChannel(channelId)
+            ?? throw new InvalidOperationException(
+                $"Discord channel {channelId} is unavailable.");
+
+        if (channel is SocketGuildChannel guildChannel
+            && !_options.AllowedGuildIds.Contains(guildChannel.Guild.Id))
+        {
+            throw new InvalidOperationException(
+                "Runtime topic route points outside the configured Discord guild allow-list.");
+        }
+
+        RequestOptions requestOptions = new()
+        {
+            CancelToken = cancellationToken
+        };
+        string heading = DiscordAutomaticTopicBatchMessageFactory.GetHeading(
+            topic,
+            articles.Count,
+            batchWindow);
+        Embed embed = DiscordAutomaticTopicBatchMessageFactory.BuildEmbed(
+            topic,
+            articles,
+            createdAt);
+
+        if (channel is IForumChannel forumChannel)
+        {
+            IThreadChannel thread = await forumChannel.CreatePostAsync(
+                DiscordAutomaticTopicBatchMessageFactory.GetForumTitle(topic, createdAt),
+                text: heading,
+                embed: embed,
+                options: requestOptions,
+                allowedMentions: AllowedMentions.None).ConfigureAwait(false);
+            return thread.Id;
+        }
+
+        if (channel is not IMessageChannel messageChannel)
+        {
+            throw new InvalidOperationException(
+                $"Discord channel {channelId} cannot receive public news batches.");
+        }
+
+        IUserMessage message = await messageChannel.SendMessageAsync(
+            text: heading,
+            embed: embed,
+            allowedMentions: AllowedMentions.None,
+            options: requestOptions).ConfigureAwait(false);
+        return message.Id;
+    }
+
     public void Dispose()
     {
         if (_disposed)
@@ -217,7 +289,9 @@ public sealed class DiscordInboxGateway : IDisposable
             _client.ButtonExecuted -= HandleButtonAsync;
         }
 
-        if (_interactionHandler is not null || _helpCommandHandler is not null)
+        if (_interactionHandler is not null
+            || _helpCommandHandler is not null
+            || _managementCommandHandler is not null)
         {
             _client.SlashCommandExecuted -= HandleSlashCommandAsync;
         }
@@ -265,6 +339,12 @@ public sealed class DiscordInboxGateway : IDisposable
             await _helpCommandHandler.RegisterAsync(_client)
                 .ConfigureAwait(false);
         }
+
+        if (_managementCommandHandler is not null)
+        {
+            await _managementCommandHandler.RegisterAsync(_client)
+                .ConfigureAwait(false);
+        }
     }
 
     private Task HandleSlashCommandAsync(SocketSlashCommand command)
@@ -273,6 +353,12 @@ public sealed class DiscordInboxGateway : IDisposable
             && _helpCommandHandler is not null)
         {
             return _helpCommandHandler.HandleAsync(command);
+        }
+
+        if (_managementCommandHandler is not null
+            && _managementCommandHandler.CanHandle(command.Data.Name))
+        {
+            return _managementCommandHandler.HandleAsync(command);
         }
 
         return _interactionHandler?.HandleSlashCommandAsync(command)
