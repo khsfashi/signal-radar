@@ -1,5 +1,7 @@
 using SignalRadar.Application.Publishing;
+using SignalRadar.Application.Translation;
 using SignalRadar.Bot.Discord;
+using SignalRadar.Domain.Articles;
 
 namespace SignalRadar.Worker.Publishing;
 
@@ -7,6 +9,8 @@ public sealed class DiscordAutomaticTopicPublisher
 {
     private readonly DiscordAutomaticTopicPublishingOptions _options;
     private readonly IAutomaticTopicPublicationStore _store;
+    private readonly IDiscordTopicRouteStore _routeStore;
+    private readonly ITitleTranslator _translator;
     private readonly DiscordInboxGateway _gateway;
     private readonly TimeProvider _timeProvider;
     private readonly Action<string> _log;
@@ -14,23 +18,20 @@ public sealed class DiscordAutomaticTopicPublisher
     public DiscordAutomaticTopicPublisher(
         DiscordAutomaticTopicPublishingOptions options,
         IAutomaticTopicPublicationStore store,
+        IDiscordTopicRouteStore routeStore,
+        ITitleTranslator translator,
         DiscordInboxGateway gateway,
         TimeProvider timeProvider,
         Action<string>? log = null)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _store = store ?? throw new ArgumentNullException(nameof(store));
+        _routeStore = routeStore ?? throw new ArgumentNullException(nameof(routeStore));
+        _translator = translator ?? throw new ArgumentNullException(nameof(translator));
         _gateway = gateway ?? throw new ArgumentNullException(nameof(gateway));
         _timeProvider = timeProvider
             ?? throw new ArgumentNullException(nameof(timeProvider));
         _log = log ?? (static _ => { });
-
-        if (_options.Routes.Count == 0)
-        {
-            throw new ArgumentException(
-                "At least one automatic topic route is required.",
-                nameof(options));
-        }
     }
 
     public async Task RunAsync(CancellationToken cancellationToken)
@@ -39,20 +40,20 @@ public sealed class DiscordAutomaticTopicPublisher
             _timeProvider.GetUtcNow(),
             cancellationToken).ConfigureAwait(false);
         _log(
-            $"Automatic Discord topic publishing started for {_options.Routes.Count} routes "
-                + $"from {activatedAt:O} with minimum score {_options.MinimumScore:0.##}.");
+            $"Batched Discord topic publishing started from {activatedAt:O}; "
+                + "runtime routes can be managed from Discord.");
 
         try
         {
             while (!cancellationToken.IsCancellationRequested)
             {
                 DateTimeOffset now = _timeProvider.GetUtcNow();
+                IReadOnlyList<ManagedDiscordTopicRoute> routes =
+                    await GetEffectiveRoutesAsync(cancellationToken).ConfigureAwait(false);
 
-                for (int routeIndex = 0;
-                    routeIndex < _options.Routes.Count;
-                    routeIndex++)
+                for (int routeIndex = 0; routeIndex < routes.Count; routeIndex++)
                 {
-                    DiscordTopicPublicationRoute route = _options.Routes[routeIndex];
+                    ManagedDiscordTopicRoute route = routes[routeIndex];
 
                     try
                     {
@@ -82,12 +83,47 @@ public sealed class DiscordAutomaticTopicPublisher
         }
         finally
         {
-            _log("Automatic Discord topic publishing stopped.");
+            _log("Batched Discord topic publishing stopped.");
         }
     }
 
+    private async ValueTask<IReadOnlyList<ManagedDiscordTopicRoute>> GetEffectiveRoutesAsync(
+        CancellationToken cancellationToken)
+    {
+        Dictionary<ArticleTopic, ManagedDiscordTopicRoute> routes = [];
+
+        for (int index = 0; index < _options.Routes.Count; index++)
+        {
+            DiscordTopicPublicationRoute route = _options.Routes[index];
+            routes[route.Topic] = new ManagedDiscordTopicRoute(
+                route.Topic,
+                route.ChannelId,
+                route.MinimumScore,
+                route.BatchWindow);
+        }
+
+        IReadOnlyList<ManagedDiscordTopicRoute> managed = await _routeStore
+            .GetAllAsync(cancellationToken).ConfigureAwait(false);
+
+        for (int index = 0; index < managed.Count; index++)
+        {
+            ManagedDiscordTopicRoute route = managed[index];
+
+            if (route.Enabled)
+            {
+                routes[route.Topic] = route;
+            }
+            else
+            {
+                routes.Remove(route.Topic);
+            }
+        }
+
+        return [.. routes.Values.OrderBy(static route => (int)route.Topic)];
+    }
+
     private async ValueTask PublishRouteAsync(
-        DiscordTopicPublicationRoute route,
+        ManagedDiscordTopicRoute route,
         DateTimeOffset activatedAt,
         DateTimeOffset now,
         CancellationToken cancellationToken)
@@ -96,7 +132,7 @@ public sealed class DiscordAutomaticTopicPublisher
             route.Topic,
             route.ChannelId,
             activatedAt,
-            _options.MinimumScore,
+            route.MinimumScore,
             _options.BatchSize,
             DiscordAutomaticTopicPublishingOptions.PublicationKind);
         IReadOnlyList<AutomaticTopicPublicationCandidate> candidates =
@@ -104,10 +140,19 @@ public sealed class DiscordAutomaticTopicPublisher
                 query,
                 now,
                 cancellationToken).ConfigureAwait(false);
+        DateTimeOffset cutoff = now - route.BatchWindow;
+        List<AutomaticTopicPublicationLease> leases = new(candidates.Count);
+        List<AutomaticTopicPublicationCandidate> batch = new(candidates.Count);
 
         for (int index = 0; index < candidates.Count; index++)
         {
             AutomaticTopicPublicationCandidate candidate = candidates[index];
+
+            if (candidate.CollectedAt > cutoff)
+            {
+                break;
+            }
+
             AutomaticTopicPublicationLease? lease = await _store.TryBeginAsync(
                 candidate.ArticleId,
                 route.ChannelId,
@@ -121,34 +166,57 @@ public sealed class DiscordAutomaticTopicPublisher
                 continue;
             }
 
-            try
+            string translatedTitle = await _translator.TranslateAsync(
+                candidate.Title,
+                cancellationToken).ConfigureAwait(false);
+            leases.Add(lease);
+            batch.Add(candidate with { Title = translatedTitle });
+        }
+
+        if (batch.Count == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            ulong resourceId = await _gateway.SendAutomaticTopicBatchAsync(
+                route.ChannelId,
+                route.Topic,
+                batch,
+                route.BatchWindow,
+                now,
+                cancellationToken).ConfigureAwait(false);
+            DateTimeOffset deliveredAt = _timeProvider.GetUtcNow();
+
+            for (int index = 0; index < leases.Count; index++)
             {
-                ulong resourceId = await _gateway.SendAutomaticTopicArticleAsync(
-                    route.ChannelId,
-                    candidate,
-                    cancellationToken).ConfigureAwait(false);
                 await _store.CompleteAsync(
-                    lease,
-                    _timeProvider.GetUtcNow(),
+                    leases[index],
+                    deliveredAt,
                     resourceId,
                     cancellationToken).ConfigureAwait(false);
-                _log(
-                    $"Published article {candidate.ArticleId} to Discord channel "
-                        + $"{route.ChannelId} as public resource {resourceId}.");
             }
-            catch (Exception exception)
-                when (exception is not OperationCanceledException)
+
+            _log(
+                $"Published {batch.Count} {route.Topic} articles to Discord channel "
+                    + $"{route.ChannelId} as batch resource {resourceId}.");
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            DateTimeOffset failedAt = _timeProvider.GetUtcNow();
+
+            for (int index = 0; index < leases.Count; index++)
             {
                 await _store.FailAsync(
-                    lease,
-                    _timeProvider.GetUtcNow(),
+                    leases[index],
+                    failedAt,
                     _options.RetryDelay,
                     exception.Message,
-                    cancellationToken).ConfigureAwait(false);
-                _log(
-                    $"Automatic article publication {candidate.ArticleId} failed: "
-                        + $"{exception.GetType().Name}: {exception.Message}");
+                    CancellationToken.None).ConfigureAwait(false);
             }
+
+            throw;
         }
     }
 }
