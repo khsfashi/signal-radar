@@ -11,10 +11,12 @@ public sealed class PostgresLibreTranslateTitleTranslator : ITitleTranslator
 {
     private const string TargetLanguage = "ko";
     private const string ProviderIdentity = "libretranslate-v1.9.6";
+    private const long FailureCooldownMilliseconds = 60_000;
     private readonly NpgsqlDataSource _dataSource;
     private readonly HttpClient _httpClient;
     private readonly Uri _translateEndpoint;
     private readonly Action<string> _log;
+    private long _retryAfterTick;
 
     public PostgresLibreTranslateTitleTranslator(
         NpgsqlDataSource dataSource,
@@ -53,6 +55,11 @@ public sealed class PostgresLibreTranslateTitleTranslator : ITitleTranslator
         if (!string.IsNullOrWhiteSpace(cached))
         {
             return cached;
+        }
+
+        if (Environment.TickCount64 < Volatile.Read(ref _retryAfterTick))
+        {
+            return normalized;
         }
 
         try
@@ -106,9 +113,12 @@ public sealed class PostgresLibreTranslateTitleTranslator : ITitleTranslator
         }
         catch (Exception exception)
         {
+            Interlocked.Exchange(
+                ref _retryAfterTick,
+                Environment.TickCount64 + FailureCooldownMilliseconds);
             _log(
-                $"Title translation failed: {exception.GetType().Name}: "
-                    + $"{exception.Message}");
+                $"Title translation failed and entered a 60-second fallback window: "
+                    + $"{exception.GetType().Name}: {exception.Message}");
             return normalized;
         }
     }
